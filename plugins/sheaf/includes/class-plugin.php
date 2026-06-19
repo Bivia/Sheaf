@@ -31,6 +31,7 @@ final class Plugin {
 		Frontend::register();
 		Blocks::register();
 		Admin::register();
+		Books_Admin::register();
 	}
 
 	/**

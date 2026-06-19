@@ -81,6 +81,32 @@ final class Books {
 	}
 
 	/**
+	 * Every chapter of a book for admin use — all editable statuses (not just
+	 * published), in reading order. Used by the Books screen and reorder UI.
+	 *
+	 * @return \WP_Post[]
+	 */
+	public static function get_chapters_for_admin( int $book_id ): array {
+		if ( ! $book_id ) {
+			return [];
+		}
+
+		$query = new \WP_Query(
+			[
+				'post_type'      => Chapters::POST_TYPE,
+				'post_status'    => [ 'publish', 'future', 'draft', 'pending', 'private' ],
+				'posts_per_page' => -1,
+				'meta_key'       => self::BOOK_META,
+				'meta_value'     => $book_id,
+				'orderby'        => [ 'menu_order' => 'ASC', 'title' => 'ASC' ],
+				'no_found_rows'  => true,
+			]
+		);
+
+		return $query->posts;
+	}
+
+	/**
 	 * The ancestor Pages of a page, root-first (for breadcrumb trails).
 	 *
 	 * @return \WP_Post[]
