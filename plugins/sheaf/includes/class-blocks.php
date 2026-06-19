@@ -33,7 +33,10 @@ final class Blocks {
 	}
 
 	public static function render_toc( array $attributes ): string {
-		return Renderer::toc( (int) ( $attributes['book'] ?? 0 ) );
+		return Renderer::toc(
+			(int) ( $attributes['book'] ?? 0 ),
+			[ 'reading_time' => (bool) ( $attributes['readingTime'] ?? true ) ]
+		);
 	}
 
 	public static function render_breadcrumbs( array $attributes ): string {

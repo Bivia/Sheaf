@@ -35,8 +35,15 @@ final class Renderer {
 
 	/**
 	 * Table of contents for a book.
+	 *
+	 * @param int   $book_id Book Page ID (0 = auto-detect from the current view).
+	 * @param array $args    { Optional.
+	 *     @type bool $reading_time Append each chapter's reading time. Default true.
+	 * }
 	 */
-	public static function toc( int $book_id = 0 ): string {
+	public static function toc( int $book_id = 0, array $args = [] ): string {
+		$args = array_merge( [ 'reading_time' => true ], $args );
+
 		$book_id = self::resolve_book_id( $book_id );
 		if ( ! $book_id ) {
 			return '';
@@ -53,11 +60,12 @@ final class Renderer {
 		foreach ( $chapters as $chapter ) {
 			$is_current = ( $chapter->ID === $current );
 			$items     .= sprintf(
-				'<li class="sheaf-toc__item%1$s"><a href="%2$s"%3$s>%4$s</a></li>',
+				'<li class="sheaf-toc__item%1$s"><a href="%2$s"%3$s>%4$s</a>%5$s</li>',
 				$is_current ? ' is-current' : '',
 				esc_url( get_permalink( $chapter ) ),
 				$is_current ? ' aria-current="page"' : '',
-				esc_html( get_the_title( $chapter ) )
+				esc_html( get_the_title( $chapter ) ),
+				$args['reading_time'] ? self::reading_time_meta( (int) $chapter->ID ) : ''
 			);
 		}
 
@@ -65,6 +73,26 @@ final class Renderer {
 			'<nav class="sheaf-toc" aria-label="%1$s"><ol class="sheaf-toc__list">%2$s</ol></nav>',
 			esc_attr__( 'Table of contents', 'sheaf' ),
 			$items
+		);
+	}
+
+	/**
+	 * The "5 min" reading-time span for a chapter, with the exact word count in
+	 * the title attribute. Returns '' if the chapter has no counted words.
+	 */
+	private static function reading_time_meta( int $chapter_id ): string {
+		$words = Words::get( $chapter_id );
+		if ( $words < 1 ) {
+			return '';
+		}
+		$minutes = Words::reading_minutes( $words );
+
+		return sprintf(
+			' <span class="sheaf-toc__meta" title="%1$s">%2$s</span>',
+			/* translators: %s: number of words. */
+			esc_attr( sprintf( _n( '%s word', '%s words', $words, 'sheaf' ), number_format_i18n( $words ) ) ),
+			/* translators: %d: reading time in minutes. */
+			esc_html( sprintf( _n( '%d min', '%d min', $minutes, 'sheaf' ), $minutes ) )
 		);
 	}
 

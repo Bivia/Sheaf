@@ -26,9 +26,19 @@ final class Frontend {
 	}
 
 	public static function toc_shortcode( $atts ): string {
-		$atts    = shortcode_atts( [ 'book' => '' ], $atts, 'sheaf_toc' );
+		$atts    = shortcode_atts(
+			[
+				'book'         => '',
+				'reading_time' => 'yes',
+			],
+			$atts,
+			'sheaf_toc'
+		);
 		$book_id = self::resolve_book_attr( (string) $atts['book'] );
-		return Renderer::toc( $book_id );
+		return Renderer::toc(
+			$book_id,
+			[ 'reading_time' => self::is_truthy( $atts['reading_time'] ) ]
+		);
 	}
 
 	public static function breadcrumbs_shortcode( $atts ): string {
@@ -49,6 +59,13 @@ final class Frontend {
 		}
 
 		return Renderer::breadcrumbs( (int) get_the_ID() ) . $content;
+	}
+
+	/**
+	 * Interpret a shortcode boolean attribute ("no"/"0"/"false" = false).
+	 */
+	private static function is_truthy( string $value ): bool {
+		return ! in_array( strtolower( trim( $value ) ), [ 'no', '0', 'false', 'off', '' ], true );
 	}
 
 	/**
