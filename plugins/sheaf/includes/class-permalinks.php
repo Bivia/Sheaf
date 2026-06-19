@@ -8,10 +8,12 @@
  * page catch-all). Instead we:
  *
  *   1. Build the pretty URL via the post_type_link filter.
- *   2. Resolve incoming requests in parse_request: if a path isn't a real Page
- *      but its final segment matches a chapter slug, route to that chapter.
- *      Chapter slugs are globally unique within the CPT, so this is unambiguous.
- *   3. Canonicalise in template_redirect (301 a stale prefix to the real path).
+ *   2. Resolve incoming requests in parse_request: if a path isn't a real Page,
+ *      treat the leading segments as a book Page path and the final segment as
+ *      a chapter slug within that book. Chapter slugs are unique *within a
+ *      book* (we scope wp_unique_post_slug to the book), so two books may each
+ *      have, say, a "prologue" and the path tells them apart.
+ *   3. Canonicalise in template_redirect (redirect a stale path to the real one).
  *
  * This is the fiddliest part of the plugin; it is intentionally isolated.
  *
@@ -28,19 +30,49 @@ final class Permalinks {
 
 	public static function register(): void {
 		add_filter( 'post_type_link', [ self::class, 'chapter_link' ], 10, 2 );
+		add_filter( 'wp_unique_post_slug', [ self::class, 'unique_slug' ], 10, 6 );
 		add_action( 'init', [ self::class, 'add_rewrite_rules' ] );
 		add_action( 'parse_request', [ self::class, 'route_request' ] );
 		add_action( 'template_redirect', [ self::class, 'canonicalise' ] );
 	}
 
 	/**
-	 * Match any "<book path>/<chapter slug>" and resolve to the chapter.
+	 * Scope a chapter's slug uniqueness to its book.
+	 *
+	 * WordPress makes a flat CPT's slugs unique across the whole type, so a
+	 * second "prologue" would become "prologue-2". We instead allow duplicate
+	 * slugs across books and only de-duplicate within a single book — that is
+	 * what makes per-book clean URLs possible. When no book is known (e.g. an
+	 * unassigned chapter), we leave WordPress's global-unique slug in place.
+	 *
+	 * @param string $slug          The slug WordPress settled on (maybe suffixed).
+	 * @param int    $post_id       The chapter being saved.
+	 * @param string $post_status   Unused.
+	 * @param string $post_type     Post type of the slug.
+	 * @param int    $post_parent   Unused.
+	 * @param string $original_slug The desired slug, before WP's de-duplication.
+	 */
+	public static function unique_slug( string $slug, int $post_id, string $post_status, string $post_type, int $post_parent, string $original_slug ): string {
+		if ( self::POST_TYPE() !== $post_type ) {
+			return $slug;
+		}
+
+		$book_id = Books::resolve_book_for_slug( $post_id );
+		if ( ! $book_id ) {
+			return $slug;
+		}
+
+		return Books::unique_chapter_slug( $original_slug, $book_id, $post_id );
+	}
+
+	/**
+	 * Match any "<book path>/<chapter slug>" so the request reaches WordPress
+	 * as a real query instead of a 404; route_request then resolves it to the
+	 * specific chapter by book + slug.
 	 *
 	 * Added at the bottom so real Pages (and their verbose page rules, which
 	 * apply under a %postname% structure) win first; only paths that don't
-	 * resolve to a Page fall through here. Chapter slugs are globally unique,
-	 * so the trailing segment alone is enough to find the chapter; a wrong
-	 * prefix is then 301'd to the canonical path by canonicalise().
+	 * resolve to a Page fall through here.
 	 */
 	public static function add_rewrite_rules(): void {
 		add_rewrite_rule(
@@ -67,36 +99,61 @@ final class Permalinks {
 	}
 
 	/**
-	 * Route a request to a chapter when its path's last segment is a chapter
-	 * slug and the path is not an existing Page.
+	 * Route a request to a chapter, using the leading path as its book and the
+	 * final segment as the chapter slug within that book.
+	 *
+	 * We resolve to a concrete post ID (not a slug) because two books may share
+	 * a chapter slug — a slug-only query would be ambiguous.
 	 */
 	public static function route_request( \WP $wp ): void {
-		$vars = $wp->query_vars;
-
-		// A genuine Page (at any depth) wins; leave it alone.
-		if ( ! empty( $vars['pagename'] ) && get_page_by_path( $vars['pagename'], OBJECT, 'page' ) ) {
+		$path = isset( $wp->request ) ? trim( (string) $wp->request, '/' ) : '';
+		if ( '' === $path ) {
 			return;
 		}
 
-		// The trailing slug can land in different query vars depending on which
-		// rewrite rule matched: the generic page catch-all uses `pagename`,
-		// while a path under an existing Page matches that Page's per-page rule
-		// and surfaces the trailing segment as `attachment`.
-		$candidate = $vars['attachment'] ?? ( $vars['name'] ?? ( $vars['pagename'] ?? '' ) );
-		if ( '' === $candidate ) {
+		// A genuine Page at this exact path wins (book pages, child pages, etc.).
+		if ( get_page_by_path( $path, OBJECT, 'page' ) ) {
 			return;
 		}
 
-		$slug    = basename( untrailingslashit( $candidate ) );
-		$chapter = self::get_chapter_by_slug( $slug );
-		if ( ! $chapter ) {
+		$segments = explode( '/', $path );
+		$slug     = array_pop( $segments );
+		$prefix   = implode( '/', $segments );
+
+		// A bare slug (no book path) can only be an unassigned chapter.
+		if ( '' === $prefix ) {
+			$chapter = self::get_chapter_by_slug( $slug );
+			if ( $chapter ) {
+				$wp->query_vars = self::chapter_query( (int) $chapter->ID );
+			}
 			return;
 		}
 
-		$wp->query_vars = [
-			'post_type'       => self::POST_TYPE(),
-			'name'            => $slug,
-			self::POST_TYPE() => $slug,
+		// A nested path resolves strictly within the named book.
+		$book    = Books::get_book_by_path( $prefix );
+		$chapter = $book ? Books::get_chapter_in_book( $slug, (int) $book->ID ) : null;
+
+		if ( $chapter ) {
+			$wp->query_vars = self::chapter_query( (int) $chapter->ID );
+			return;
+		}
+
+		// It looked like a chapter path but resolves to nothing in that book.
+		// The catch-all rewrite rule already populated a slug-only chapter guess
+		// (post_type + name), which would otherwise match a same-slug chapter in
+		// another book. Replace it with a hard 404 so a wrong book path never
+		// silently lands on (or redirects to) the wrong chapter.
+		$wp->query_vars = [ 'error' => '404' ];
+	}
+
+	/**
+	 * Query vars that load a specific chapter by ID — unambiguous even when two
+	 * books share a chapter slug.
+	 */
+	private static function chapter_query( int $chapter_id ): array {
+		return [
+			'post_type' => self::POST_TYPE(),
+			'p'         => $chapter_id,
 		];
 	}
 
