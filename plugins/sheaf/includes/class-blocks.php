@@ -30,6 +30,10 @@ final class Blocks {
 			SHEAF_DIR . 'blocks/breadcrumbs',
 			[ 'render_callback' => [ self::class, 'render_breadcrumbs' ] ]
 		);
+		register_block_type(
+			SHEAF_DIR . 'blocks/chapter-nav',
+			[ 'render_callback' => [ self::class, 'render_chapter_nav' ] ]
+		);
 	}
 
 	public static function render_toc( array $attributes ): string {
@@ -41,6 +45,10 @@ final class Blocks {
 
 	public static function render_breadcrumbs( array $attributes ): string {
 		return Renderer::breadcrumbs();
+	}
+
+	public static function render_chapter_nav( array $attributes ): string {
+		return Renderer::chapter_nav();
 	}
 
 	/**

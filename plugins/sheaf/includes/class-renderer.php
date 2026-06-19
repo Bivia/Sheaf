@@ -111,6 +111,60 @@ final class Renderer {
 	}
 
 	/**
+	 * Previous / next links within a chapter's book, in reading order.
+	 * Sections are part of the sequence. Returns '' at the ends or off-book.
+	 */
+	public static function chapter_nav( int $chapter_id = 0 ): string {
+		$chapter_id = $chapter_id ?: (int) get_queried_object_id();
+		if ( ! $chapter_id ) {
+			return '';
+		}
+
+		$book_id = Books::get_book_id( $chapter_id );
+		if ( ! $book_id ) {
+			return '';
+		}
+
+		$chapters = Books::get_chapters( $book_id );
+		$index    = null;
+		foreach ( $chapters as $i => $chapter ) {
+			if ( (int) $chapter->ID === $chapter_id ) {
+				$index = $i;
+				break;
+			}
+		}
+		if ( null === $index ) {
+			return '';
+		}
+
+		$prev = $chapters[ $index - 1 ] ?? null;
+		$next = $chapters[ $index + 1 ] ?? null;
+		if ( ! $prev && ! $next ) {
+			return '';
+		}
+
+		$link = static function ( ?\WP_Post $post, string $rel, string $label ): string {
+			if ( ! $post ) {
+				return '';
+			}
+			return sprintf(
+				'<a class="sheaf-chapter-nav__link sheaf-chapter-nav__%1$s" rel="%1$s" href="%2$s"><span class="sheaf-chapter-nav__dir">%3$s</span> <span class="sheaf-chapter-nav__title">%4$s</span></a>',
+				esc_attr( $rel ),
+				esc_url( get_permalink( $post ) ),
+				esc_html( $label ),
+				esc_html( get_the_title( $post ) )
+			);
+		};
+
+		return sprintf(
+			'<nav class="sheaf-chapter-nav" aria-label="%1$s">%2$s%3$s</nav>',
+			esc_attr__( 'Chapter navigation', 'sheaf' ),
+			$link( $prev, 'prev', __( 'Previous', 'sheaf' ) ),
+			$link( $next, 'next', __( 'Next', 'sheaf' ) )
+		);
+	}
+
+	/**
 	 * Breadcrumb trail for a chapter or a Page.
 	 */
 	public static function breadcrumbs( int $object_id = 0 ): string {

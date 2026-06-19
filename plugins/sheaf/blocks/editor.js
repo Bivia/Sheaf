@@ -39,4 +39,13 @@
 			return null; // dynamic; rendered by PHP
 		},
 	} );
+
+	registerBlockType( 'sheaf/chapter-nav', {
+		edit: function ( props ) {
+			return preview( 'sheaf/chapter-nav', props.attributes );
+		},
+		save: function () {
+			return null; // dynamic; rendered by PHP
+		},
+	} );
 } )( window.wp );

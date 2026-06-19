@@ -22,7 +22,9 @@ final class Frontend {
 	public static function register(): void {
 		add_shortcode( 'sheaf_toc', [ self::class, 'toc_shortcode' ] );
 		add_shortcode( 'sheaf_breadcrumbs', [ self::class, 'breadcrumbs_shortcode' ] );
+		add_shortcode( 'sheaf_chapter_nav', [ self::class, 'chapter_nav_shortcode' ] );
 		add_filter( 'the_content', [ self::class, 'auto_breadcrumbs' ], 9 );
+		add_filter( 'the_content', [ self::class, 'auto_chapter_nav' ], 11 );
 		add_filter( 'body_class', [ self::class, 'body_class' ] );
 	}
 
@@ -55,6 +57,26 @@ final class Frontend {
 
 	public static function breadcrumbs_shortcode( $atts ): string {
 		return Renderer::breadcrumbs();
+	}
+
+	public static function chapter_nav_shortcode( $atts ): string {
+		return Renderer::chapter_nav();
+	}
+
+	/**
+	 * Append previous/next links to a single chapter's content.
+	 */
+	public static function auto_chapter_nav( string $content ): string {
+		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
+			return $content;
+		}
+
+		/** Filter: return false to disable automatic chapter prev/next links. */
+		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
+			return $content;
+		}
+
+		return $content . Renderer::chapter_nav( (int) get_the_ID() );
 	}
 
 	/**

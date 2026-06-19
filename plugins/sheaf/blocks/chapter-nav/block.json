@@ -1,0 +1,15 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "sheaf/chapter-nav",
+	"title": "Sheaf: Chapter Navigation",
+	"category": "widgets",
+	"icon": "controls-repeat",
+	"description": "Previous / next links within the current chapter's book.",
+	"textdomain": "sheaf",
+	"supports": {
+		"html": false,
+		"align": ["wide", "full"]
+	},
+	"attributes": {}
+}
