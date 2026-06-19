@@ -24,6 +24,8 @@ final class Admin {
 
 		add_filter( 'manage_' . Chapters::POST_TYPE . '_posts_columns', [ self::class, 'columns' ] );
 		add_action( 'manage_' . Chapters::POST_TYPE . '_posts_custom_column', [ self::class, 'column' ], 10, 2 );
+		add_filter( 'manage_edit-' . Chapters::POST_TYPE . '_sortable_columns', [ self::class, 'sortable_columns' ] );
+		add_action( 'pre_get_posts', [ self::class, 'apply_sort' ] );
 
 		// "All Chapters" list: filter by book, and group by book + reading order.
 		add_action( 'restrict_manage_posts', [ self::class, 'book_filter' ] );
@@ -158,8 +160,12 @@ final class Admin {
 	}
 
 	public static function columns( array $columns ): array {
-		$insert = [ 'sheaf_book' => __( 'Book', 'sheaf' ), 'sheaf_order' => __( 'Order', 'sheaf' ) ];
-		$out    = [];
+		$insert = [
+			'sheaf_book'  => __( 'Book', 'sheaf' ),
+			'sheaf_order' => __( 'Order', 'sheaf' ),
+			'sheaf_words' => __( 'Words', 'sheaf' ),
+		];
+		$out = [];
 		foreach ( $columns as $key => $label ) {
 			$out[ $key ] = $label;
 			if ( 'title' === $key ) {
@@ -175,6 +181,40 @@ final class Admin {
 			echo $book ? esc_html( get_the_title( $book ) ) : '<span aria-hidden="true">—</span>';
 		} elseif ( 'sheaf_order' === $column ) {
 			echo (int) get_post_field( 'menu_order', $post_id );
+		} elseif ( 'sheaf_words' === $column ) {
+			$words   = Words::get( $post_id );
+			$minutes = Words::reading_minutes( $words );
+			printf(
+				/* translators: 1: word count, 2: reading time in minutes. */
+				'%1$s<br><span class="description">%2$s</span>',
+				esc_html( number_format_i18n( $words ) ),
+				esc_html( sprintf( _n( '%d min', '%d min', $minutes, 'sheaf' ), $minutes ) )
+			);
+		}
+	}
+
+	/**
+	 * Make Order and Words sortable column headers.
+	 */
+	public static function sortable_columns( array $columns ): array {
+		$columns['sheaf_order'] = 'menu_order';
+		$columns['sheaf_words'] = 'sheaf_words';
+		return $columns;
+	}
+
+	/**
+	 * Translate a click on the Words header into a meta-value sort.
+	 */
+	public static function apply_sort( \WP_Query $query ): void {
+		if ( ! is_admin() || ! $query->is_main_query() ) {
+			return;
+		}
+		if ( Chapters::POST_TYPE !== $query->get( 'post_type' ) ) {
+			return;
+		}
+		if ( 'sheaf_words' === $query->get( 'orderby' ) ) {
+			$query->set( 'meta_key', Words::META );
+			$query->set( 'orderby', 'meta_value_num' );
 		}
 	}
 }
