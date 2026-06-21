@@ -234,10 +234,19 @@ final class Books_Admin {
 			],
 			admin_url( 'edit.php' )
 		);
+		$add_url  = add_query_arg(
+			[
+				'post_type'  => Chapters::POST_TYPE,
+				'sheaf_book' => $book_id,
+			],
+			admin_url( 'post-new.php' )
+		);
 
 		printf(
-			'<h1 class="wp-heading-inline">%s</h1> <a href="%s" class="page-title-action">%s</a>',
+			'<h1 class="wp-heading-inline">%1$s</h1> <a href="%2$s" class="page-title-action">%3$s</a> <a href="%4$s" class="page-title-action">%5$s</a>',
 			esc_html( get_the_title( $book_id ) ),
+			esc_url( $add_url ),
+			esc_html__( 'Add chapter', 'sheaf' ),
 			esc_url( $back ),
 			esc_html__( 'All books', 'sheaf' )
 		);
