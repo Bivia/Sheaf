@@ -185,17 +185,39 @@ final class Books_Admin {
 				],
 				admin_url( 'edit.php' )
 			);
+			$chapters_url = add_query_arg(
+				[
+					'post_type'  => Chapters::POST_TYPE,
+					'sheaf_book' => $book_id,
+				],
+				admin_url( 'edit.php' )
+			);
+			$add_url = add_query_arg(
+				[
+					'post_type'  => Chapters::POST_TYPE,
+					'sheaf_book' => $book_id,
+				],
+				admin_url( 'post-new.php' )
+			);
 
 			echo '<tr>';
 			printf(
-				'<td><strong><a href="%1$s">%2$s</a></strong><div class="row-actions"><span><a href="%3$s">%4$s</a></span></div></td>',
+				'<td><strong><a href="%1$s">%2$s</a></strong><div class="row-actions"><span><a href="%3$s">%4$s</a> | </span><span><a href="%5$s">%6$s</a></span></div></td>',
 				esc_url( $manage ),
 				esc_html( get_the_title( $book_id ) ),
 				esc_url( (string) get_edit_post_link( $book_id ) ),
-				esc_html__( 'Edit page', 'sheaf' )
+				esc_html__( 'Edit page', 'sheaf' ),
+				esc_url( $add_url ),
+				esc_html__( 'Add chapter', 'sheaf' )
 			);
 			printf( '<td>%s</td>', esc_html( $context ) );
-			printf( '<td>%s</td>', esc_html( number_format_i18n( $count ) ) );
+			printf(
+				'<td><a href="%1$s">%2$s</a><div class="row-actions"><span><a href="%3$s">%4$s</a></span></div></td>',
+				esc_url( $chapters_url ),
+				esc_html( number_format_i18n( $count ) ),
+				esc_url( $add_url ),
+				esc_html__( 'Add chapter', 'sheaf' )
+			);
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $words ) ) );
 			echo '</tr>';
 		}
