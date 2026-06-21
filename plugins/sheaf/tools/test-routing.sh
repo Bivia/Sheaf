@@ -37,15 +37,15 @@ echo "Seeding known state…"
 
 echo "Pages and book/series indexes (expect 200):"
 for u in novels novels/long-war novels/long-war/embers novels/long-war/ashfall \
-         novels/clockwork novels/clockwork/clockwork-heart novels/clockwork/iron-wind \
-         novels/wintering novels/agreement-with-hell fiction fiction/asterism \
+         novels/gearfall novels/gearfall/mainspring novels/gearfall/stormgear \
+         novels/wintering novels/the-ashen-compact fiction fiction/asterism \
          fiction/asterism/ship-design about about/met title-text; do
 	check_status "$u" 200
 done
 
 echo "Chapters and sections (expect 200):"
-for u in novels/clockwork/clockwork-heart/3 novels/clockwork/iron-wind/prologue \
-         novels/clockwork/iron-wind/12-skyfire novels/clockwork/clockwork-heart/part-i-wind-up; do
+for u in novels/gearfall/mainspring/3 novels/gearfall/stormgear/prologue \
+         novels/gearfall/stormgear/12-skyfire novels/gearfall/mainspring/part-i-wind-up; do
 	check_status "$u" 200
 done
 
@@ -56,7 +56,7 @@ check_status "novels/long-war/ashfall/13-resignations" 404
 
 echo "Per-book slug discrimination — five 'prologue' URLs must be five distinct posts:"
 distinct="$(for u in novels/long-war/embers/prologue novels/long-war/ashfall/prologue \
-                     novels/clockwork/clockwork-heart/prologue novels/clockwork/iron-wind/prologue \
+                     novels/gearfall/mainspring/prologue novels/gearfall/stormgear/prologue \
                      novels/wintering/prologue; do
 	curl -s "$BASE/$u/" | grep -oP 'postid-\d+' | head -1
 done | sort -u | wc -l)"
@@ -65,10 +65,10 @@ if [ "$distinct" = "5" ]; then ok "5 distinct prologue posts"; else ng "expected
 echo "Each prologue breadcrumbs to its own book:"
 check_contains "novels/long-war/embers/prologue"   "Embers"   "breadcrumb names Embers"
 check_contains "novels/long-war/ashfall/prologue"  "Ashfall"  "breadcrumb names Ashfall"
-check_contains "novels/clockwork/iron-wind/prologue" "Iron Wind" "breadcrumb names Iron Wind"
+check_contains "novels/gearfall/stormgear/prologue" "Stormgear" "breadcrumb names Stormgear"
 
 echo "Section view carries the CSS hook:"
-check_contains "novels/clockwork/clockwork-heart/part-i-wind-up" "sheaf-section" "body class sheaf-section"
+check_contains "novels/gearfall/mainspring/part-i-wind-up" "sheaf-section" "body class sheaf-section"
 
 echo "Data-layer checks:"
 n="$("$WPENV" run cli wp eval 'echo count(get_posts(["post_type"=>"sheaf_chapter","name"=>"prologue","post_status"=>"publish","numberposts"=>-1]));' 2>/dev/null | tr -dc '0-9')"

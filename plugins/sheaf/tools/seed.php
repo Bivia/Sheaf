@@ -29,7 +29,7 @@ if ( ! function_exists( 'sheaf_seed_filler' ) ) {
 			'He counted the bells from the far tower and lost the count twice.',
 			'They had marched since the cold road forked, and the forking felt like a verdict.',
 			'A gull wheeled once over the harbour and did not come back.',
-			'In the workshop the clockwork hearts ticked out of time with one another.',
+			'In the workshop the brass mechanisms ticked out of time with one another.',
 			'Nobody had told the children that the gate would not open again.',
 			'The letters arrived weeks late, smelling of smoke and salt and other people.',
 			'Skyfire broke along the ridge and for a moment the whole valley was noon.',
@@ -168,16 +168,17 @@ $long_war = sheaf_seed_page( 'long-war', 'The Long War', $novels );
 $embers   = sheaf_seed_page( 'embers', 'Embers', $long_war );
 $ashfall  = sheaf_seed_page( 'ashfall', 'Ashfall', $long_war );
 
-// Clockwork — a second series (trilogy index) with two books here.
-$clockwork = sheaf_seed_page( 'clockwork', 'Clockwork', $novels );
-$heart     = sheaf_seed_page( 'clockwork-heart', 'Clockwork Heart', $clockwork );
-$iron_wind = sheaf_seed_page( 'iron-wind', 'Iron Wind', $clockwork );
+// Gearfall — a second series (trilogy index) with two books here. (Titles are
+// invented so the fixtures never reuse a real book's name.)
+$gearfall  = sheaf_seed_page( 'gearfall', 'Gearfall', $novels );
+$mainspring = sheaf_seed_page( 'mainspring', 'Mainspring', $gearfall );
+$stormgear = sheaf_seed_page( 'stormgear', 'Stormgear', $gearfall );
 
 // Wintering — a book with chapters that is NOT part of any series.
 $wintering = sheaf_seed_page( 'wintering', 'Wintering', $novels );
 
 // Standalone single-page novel (no chapters).
-sheaf_seed_page( 'agreement-with-hell', 'Agreement with Hell', $novels, sheaf_seed_filler( 'agreement' ) );
+sheaf_seed_page( 'the-ashen-compact', 'The Ashen Compact', $novels, sheaf_seed_filler( 'ashen-compact' ) );
 
 // Novella as a single post, plus a hand-authored child Page (author's note).
 $asterism = sheaf_seed_page( 'asterism', 'Asterism', $fiction, sheaf_seed_filler( 'asterism' ) );
@@ -204,17 +205,17 @@ $chapters = [
 		[ '3-floodlight', 'Floodlight', 3 ],
 		[ 'epilogue', 'Epilogue', 4 ],
 	],
-	// Clockwork Heart shows section dividers interleaved with chapters.
-	$heart     => [
+	// Mainspring shows section dividers interleaved with chapters.
+	$mainspring => [
 		[ 'part-i-wind-up', 'Part I: Wind-Up', 0, true ],
 		[ 'prologue', 'Prologue', 1 ],
 		[ '1', 'Chapter One', 2 ],
 		[ '2', 'Chapter Two', 3 ],
-		[ 'part-ii-mainspring', 'Part II: The Mainspring', 4, true ],
+		[ 'part-ii-escapement', 'Part II: Escapement', 4, true ],
 		[ '3', 'Chapter Three', 5 ],
 		[ '4', 'Chapter Four', 6 ],
 	],
-	$iron_wind => [
+	$stormgear => [
 		[ 'prologue', 'Prologue', 0 ],
 		[ '10-ashpath', 'Chapter Ten', 1 ],
 		[ '11-the-gate', 'Chapter Eleven', 2 ],
@@ -255,4 +256,4 @@ if ( ! get_page_by_path( 'title-text', OBJECT, 'post' ) ) {
 
 flush_rewrite_rules();
 
-WP_CLI::success( 'Sheaf seed complete. Books: Embers, Ashfall, Clockwork Heart, Iron Wind, Wintering (5 chapters each).' );
+WP_CLI::success( 'Sheaf seed complete. Books: Embers, Ashfall, Mainspring, Stormgear, Wintering (5 chapters each).' );
