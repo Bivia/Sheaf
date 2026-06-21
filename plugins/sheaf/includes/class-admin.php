@@ -97,17 +97,27 @@ final class Admin {
 		if ( Chapters::POST_TYPE !== $query->get( 'post_type' ) ) {
 			return $clauses;
 		}
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only list state.
-		if ( isset( $_GET['orderby'] ) ) {
-			return $clauses; // Respect an explicit column sort.
+
+		// Group by book + reading order when there is no explicit sort, or when
+		// the Book column header itself is clicked. Other column sorts (Order,
+		// Words, Title, Date) are left to WordPress.
+		$orderby = (string) $query->get( 'orderby' );
+		if ( '' !== $orderby && 'sheaf_book' !== $orderby ) {
+			return $clauses;
 		}
+
+		// Only the book dimension flips with asc/desc; chapters always read in
+		// menu_order within their book.
+		$dir = ( 'sheaf_book' === $orderby && 'desc' === strtolower( (string) $query->get( 'order' ) ) )
+			? 'DESC'
+			: 'ASC';
 
 		global $wpdb;
 		$meta_key = esc_sql( Books::BOOK_META );
 
 		$clauses['join']   .= " LEFT JOIN {$wpdb->postmeta} sheaf_bk ON {$wpdb->posts}.ID = sheaf_bk.post_id AND sheaf_bk.meta_key = '{$meta_key}'";
 		$clauses['join']   .= " LEFT JOIN {$wpdb->posts} sheaf_bp ON sheaf_bp.ID = CAST(sheaf_bk.meta_value AS UNSIGNED)";
-		$clauses['orderby'] = "sheaf_bp.post_title ASC, {$wpdb->posts}.menu_order ASC, {$wpdb->posts}.post_title ASC";
+		$clauses['orderby'] = "sheaf_bp.post_title {$dir}, {$wpdb->posts}.menu_order ASC, {$wpdb->posts}.post_title ASC";
 
 		return $clauses;
 	}
@@ -209,6 +219,7 @@ final class Admin {
 	 * Make Order and Words sortable column headers.
 	 */
 	public static function sortable_columns( array $columns ): array {
+		$columns['sheaf_book']  = 'sheaf_book';
 		$columns['sheaf_order'] = 'menu_order';
 		$columns['sheaf_words'] = 'sheaf_words';
 		return $columns;
