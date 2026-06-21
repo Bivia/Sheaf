@@ -52,6 +52,9 @@ final class Chapters {
 				'show_in_rest' => true,
 				'hierarchical' => false,
 				'has_archive'  => false,
+				// The menu is provided by Books_Admin as a custom "Sheafs" top-level
+				// menu (Books / Chapters / New Chapter), so suppress the default one.
+				'show_in_menu' => false,
 				'menu_icon'    => 'dashicons-book',
 				'supports'     => [
 					'title',

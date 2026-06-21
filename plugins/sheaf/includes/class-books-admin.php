@@ -1,12 +1,12 @@
 <?php
 /**
- * The "Books" admin screens (a submenu of the Sheaf/Chapters menu).
+ * The "Sheafs" admin menu and its "Books" screens.
  *
- * - A listing of every Page that has chapters: its series/context, chapter
- *   count and total words.
- * - A per-book settings page where chapters are reordered by drag and drop
- *   (jquery-ui-sortable + an AJAX save), with room scaffolded for future
- *   per-book settings.
+ * Provides the plugin's top-level menu — Books, Chapters, New Chapter — landing
+ * on the Books list. Books are any Page with chapters: the list shows each
+ * book's series/context, chapter count and total words; a per-book settings
+ * page reorders chapters by drag and drop (jquery-ui-sortable + an AJAX save),
+ * with room scaffolded for future per-book settings.
  *
  * @package Sheaf
  */
@@ -30,17 +30,74 @@ final class Books_Admin {
 		add_action( 'admin_menu', [ self::class, 'add_page' ] );
 		add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue' ] );
 		add_action( 'wp_ajax_sheaf_reorder', [ self::class, 'ajax_reorder' ] );
+
+		// Keep the "Sheafs" menu open/highlighted on the (menu-hidden) chapter
+		// list and editor screens.
+		add_filter( 'parent_file', [ self::class, 'highlight_parent' ] );
+		add_filter( 'submenu_file', [ self::class, 'highlight_submenu' ] );
 	}
 
+	/**
+	 * Register the "Sheafs" top-level menu: Books, Chapters, New Chapter.
+	 */
 	public static function add_page(): void {
-		self::$hook = (string) add_submenu_page(
-			'edit.php?post_type=' . Chapters::POST_TYPE,
+		self::$hook = (string) add_menu_page(
+			__( 'Sheafs', 'sheaf' ),
+			__( 'Sheafs', 'sheaf' ),
+			self::CAPABILITY,
+			self::PAGE,
+			[ self::class, 'render' ],
+			'dashicons-book',
+			25
+		);
+
+		// First submenu repeats the parent slug, which both labels it "Books" and
+		// makes the top-level "Sheafs" link land on the Books list.
+		add_submenu_page(
+			self::PAGE,
 			__( 'Books', 'sheaf' ),
 			__( 'Books', 'sheaf' ),
 			self::CAPABILITY,
 			self::PAGE,
 			[ self::class, 'render' ]
 		);
+		add_submenu_page(
+			self::PAGE,
+			__( 'Chapters', 'sheaf' ),
+			__( 'Chapters', 'sheaf' ),
+			self::CAPABILITY,
+			'edit.php?post_type=' . Chapters::POST_TYPE
+		);
+		add_submenu_page(
+			self::PAGE,
+			__( 'New Chapter', 'sheaf' ),
+			__( 'New Chapter', 'sheaf' ),
+			self::CAPABILITY,
+			'post-new.php?post_type=' . Chapters::POST_TYPE
+		);
+	}
+
+	/**
+	 * Treat the chapter screens as children of the Sheafs menu.
+	 */
+	public static function highlight_parent( string $parent_file ): string {
+		if ( Chapters::POST_TYPE === ( $GLOBALS['typenow'] ?? '' ) ) {
+			return self::PAGE;
+		}
+		return $parent_file;
+	}
+
+	/**
+	 * Highlight the right Sheafs submenu for the current chapter screen.
+	 */
+	public static function highlight_submenu( ?string $submenu_file ): ?string {
+		if ( Chapters::POST_TYPE !== ( $GLOBALS['typenow'] ?? '' ) ) {
+			return $submenu_file;
+		}
+		if ( 'post-new.php' === ( $GLOBALS['pagenow'] ?? '' ) ) {
+			return 'post-new.php?post_type=' . Chapters::POST_TYPE;
+		}
+		return 'edit.php?post_type=' . Chapters::POST_TYPE;
 	}
 
 	public static function enqueue( string $hook ): void {
