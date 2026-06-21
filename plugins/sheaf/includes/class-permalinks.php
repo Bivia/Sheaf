@@ -106,6 +106,14 @@ final class Permalinks {
 	 * a chapter slug — a slug-only query would be ambiguous.
 	 */
 	public static function route_request( \WP $wp ): void {
+		// The admin list tables call wp() internally (wp_edit_posts_query()),
+		// which fires parse_request with a path of "wp-admin/edit.php". Routing
+		// that as a chapter would wipe the list query's vars and 404 the screen,
+		// so never touch admin requests.
+		if ( is_admin() ) {
+			return;
+		}
+
 		$path = isset( $wp->request ) ? trim( (string) $wp->request, '/' ) : '';
 		if ( '' === $path ) {
 			return;
