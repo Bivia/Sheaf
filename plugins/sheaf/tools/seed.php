@@ -117,6 +117,39 @@ if ( ! function_exists( 'sheaf_seed_filler' ) ) {
 	}
 
 	/**
+	 * A single placeholder paragraph for a book or series landing page.
+	 */
+	function sheaf_seed_blurb( string $seed ): string {
+		$lines = [
+			'Invented flap copy stands here in place of a real synopsis, present only so the page has something to show.',
+			'A sentence or two of seeded placeholder, safe to ignore while the plugin is built.',
+			'Fictional cover text for a book that does not exist; here to give the page shape.',
+			'Development filler: imaginary blurb matter where a description will eventually go.',
+		];
+		$line = $lines[ (int) ( crc32( $seed ) % count( $lines ) ) ];
+		return "<!-- wp:paragraph -->\n<p>{$line}</p>\n<!-- /wp:paragraph -->";
+	}
+
+	/**
+	 * Landing content for a book Page: a blurb followed by its table of contents.
+	 */
+	function sheaf_seed_book_page( string $seed ): string {
+		return sheaf_seed_blurb( $seed ) . "\n\n<!-- wp:shortcode -->\n[sheaf_toc]\n<!-- /wp:shortcode -->";
+	}
+
+	/**
+	 * Landing content for a series Page: a blurb followed by links to its books.
+	 */
+	function sheaf_seed_series_page( string $seed, array $book_ids ): string {
+		$items = '';
+		foreach ( $book_ids as $bid ) {
+			$items .= '<li><a href="' . esc_url( get_permalink( $bid ) ) . '">' . esc_html( get_the_title( $bid ) ) . '</a></li>';
+		}
+		$list = "<!-- wp:list -->\n<ul class=\"wp-block-list\">{$items}</ul>\n<!-- /wp:list -->";
+		return sheaf_seed_blurb( $seed ) . "\n\n" . $list;
+	}
+
+	/**
 	 * Upsert a chapter by (book, slug). Returns its ID.
 	 */
 	function sheaf_seed_chapter( int $book_id, string $slug, string $title, int $order, string $content, bool $is_section = false ): int {
@@ -163,19 +196,24 @@ if ( ! function_exists( 'sheaf_seed_filler' ) ) {
 $novels = sheaf_seed_page( 'novels', 'Novels' );
 $fiction = sheaf_seed_page( 'fiction', 'Fiction' );
 
-// The Long War — a series with two books.
+// The Long War — a series with two books. Each book page carries a blurb +
+// its TOC; the series page (set below, once its books exist) links to them.
 $long_war = sheaf_seed_page( 'long-war', 'The Long War', $novels );
-$embers   = sheaf_seed_page( 'embers', 'Embers', $long_war );
-$ashfall  = sheaf_seed_page( 'ashfall', 'Ashfall', $long_war );
+$embers   = sheaf_seed_page( 'embers', 'Embers', $long_war, sheaf_seed_book_page( 'embers' ) );
+$ashfall  = sheaf_seed_page( 'ashfall', 'Ashfall', $long_war, sheaf_seed_book_page( 'ashfall' ) );
 
 // Gearfall — a second series (trilogy index) with two books here. (Titles are
 // invented so the fixtures never reuse a real book's name.)
 $gearfall  = sheaf_seed_page( 'gearfall', 'Gearfall', $novels );
-$mainspring = sheaf_seed_page( 'mainspring', 'Mainspring', $gearfall );
-$stormgear = sheaf_seed_page( 'stormgear', 'Stormgear', $gearfall );
+$mainspring = sheaf_seed_page( 'mainspring', 'Mainspring', $gearfall, sheaf_seed_book_page( 'mainspring' ) );
+$stormgear = sheaf_seed_page( 'stormgear', 'Stormgear', $gearfall, sheaf_seed_book_page( 'stormgear' ) );
 
 // Wintering — a book with chapters that is NOT part of any series.
-$wintering = sheaf_seed_page( 'wintering', 'Wintering', $novels );
+$wintering = sheaf_seed_page( 'wintering', 'Wintering', $novels, sheaf_seed_book_page( 'wintering' ) );
+
+// Now that the books exist, give each series page a blurb + links to its books.
+sheaf_seed_page( 'long-war', 'The Long War', $novels, sheaf_seed_series_page( 'long-war', [ $embers, $ashfall ] ) );
+sheaf_seed_page( 'gearfall', 'Gearfall', $novels, sheaf_seed_series_page( 'gearfall', [ $mainspring, $stormgear ] ) );
 
 // Standalone single-page novel (no chapters).
 sheaf_seed_page( 'the-ashen-compact', 'The Ashen Compact', $novels, sheaf_seed_filler( 'ashen-compact' ) );
