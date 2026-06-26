@@ -59,20 +59,22 @@
 			items: '> tr',
 			handle: '.sheaf-reorder__handle',
 			axis: 'y',
-			// Keep the dragged row's column widths instead of collapsing them.
+			cursor: 'grabbing',
+			// Drag the row itself (not a clone) with its cell widths pinned, so
+			// the columns don't collapse mid-drag. Returning a clone here leaves
+			// the original row in place and the drop reverts — which looks like a
+			// working drag that never saves.
 			helper: function ( event, $row ) {
-				var $originals = $row.children();
-				var $helper = $row.clone();
-				$helper.children().each( function ( index ) {
-					$( this ).width( $originals.eq( index ).outerWidth() );
+				$row.children().each( function () {
+					$( this ).width( $( this ).width() );
 				} );
-				return $helper;
+				return $row;
 			},
 			placeholder: 'sheaf-reorder__placeholder',
+			forcePlaceholderSize: true,
 			start: function ( event, ui ) {
-				// Give the placeholder a real cell so the row keeps its height.
+				// Give the empty placeholder row a cell so it keeps a row's height.
 				ui.placeholder.html( '<td colspan="5">&nbsp;</td>' );
-				ui.placeholder.height( ui.item.outerHeight() );
 			},
 			update: function () {
 				renumber();

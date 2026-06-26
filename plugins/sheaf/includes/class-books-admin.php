@@ -104,11 +104,15 @@ final class Books_Admin {
 		if ( $hook !== self::$hook ) {
 			return;
 		}
+		// Version by file mtime so edits bust the browser cache during active
+		// development (the asset is mounted live and changes between requests).
+		$asset = SHEAF_DIR . 'assets/admin-reorder.js';
+		$ver   = file_exists( $asset ) ? (string) filemtime( $asset ) : SHEAF_VERSION;
 		wp_enqueue_script(
 			'sheaf-reorder',
 			SHEAF_URL . 'assets/admin-reorder.js',
 			[ 'jquery', 'jquery-ui-sortable' ],
-			SHEAF_VERSION,
+			$ver,
 			true
 		);
 		wp_localize_script(
