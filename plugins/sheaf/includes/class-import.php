@@ -535,14 +535,29 @@ final class Import {
 		$created = self::create_drafts( $data );
 		self::forget( $token );
 
-		$redirect = add_query_arg(
-			[
-				'post_type'      => Chapters::POST_TYPE,
-				'sheaf_book'     => (int) $data['book'],
-				'sheaf_imported' => $created,
-			],
-			admin_url( 'edit.php' )
-		);
+		$book = (int) $data['book'];
+		if ( $book ) {
+			// Land on the book's reading-order screen so the author can slot the
+			// new drafts into place straight away.
+			$redirect = add_query_arg(
+				[
+					'post_type'      => Chapters::POST_TYPE,
+					'page'           => Books_Admin::MENU_SLUG,
+					'book'           => $book,
+					'sheaf_imported' => $created,
+				],
+				admin_url( 'edit.php' )
+			);
+		} else {
+			// Unassigned imports have no book page; fall back to the chapter list.
+			$redirect = add_query_arg(
+				[
+					'post_type'      => Chapters::POST_TYPE,
+					'sheaf_imported' => $created,
+				],
+				admin_url( 'edit.php' )
+			);
+		}
 		wp_safe_redirect( $redirect );
 		exit;
 	}
