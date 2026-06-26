@@ -174,8 +174,24 @@ final class Books_Admin {
 				}
 			}
 
-			$ancestors = array_map( 'get_the_title', Books::ancestors( $book_id ) );
-			$context   = $ancestors ? implode( ' › ', $ancestors ) : '—';
+			// Series / context = the book's ancestor Pages, each linked to the
+			// page it names.
+			$ancestors = Books::ancestors( $book_id );
+			if ( $ancestors ) {
+				$links = array_map(
+					static function ( \WP_Post $page ): string {
+						return sprintf(
+							'<a href="%1$s">%2$s</a>',
+							esc_url( (string) get_permalink( $page ) ),
+							esc_html( get_the_title( $page ) )
+						);
+					},
+					$ancestors
+				);
+				$context = implode( ' › ', $links );
+			} else {
+				$context = '<span aria-hidden="true">—</span>';
+			}
 
 			$manage = add_query_arg(
 				[
@@ -212,13 +228,11 @@ final class Books_Admin {
 				esc_url( Import::url( $book_id ) ),
 				esc_html__( 'Import', 'sheaf' )
 			);
-			printf( '<td>%s</td>', esc_html( $context ) );
+			echo '<td>' . $context . '</td>'; // Links built and escaped above.
 			printf(
-				'<td><a href="%1$s">%2$s</a><div class="row-actions"><span><a href="%3$s">%4$s</a></span></div></td>',
+				'<td><a href="%1$s">%2$s</a></td>',
 				esc_url( $chapters_url ),
-				esc_html( number_format_i18n( $count ) ),
-				esc_url( $add_url ),
-				esc_html__( 'Add chapter', 'sheaf' )
+				esc_html( number_format_i18n( $count ) )
 			);
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $words ) ) );
 			echo '</tr>';
