@@ -148,6 +148,30 @@ final class Books {
 	}
 
 	/**
+	 * The menu_order one past the last chapter in a book (0 for an empty book),
+	 * so a newly added chapter appends to the end of its reading order.
+	 */
+	public static function next_menu_order( int $book_id, int $exclude_id = 0 ): int {
+		if ( ! $book_id ) {
+			return 0;
+		}
+		global $wpdb;
+		$max = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT MAX(p.menu_order) FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = %s
+				 WHERE m.meta_value = %d AND p.post_type = %s AND p.ID <> %d
+				 AND p.post_status NOT IN ( 'trash', 'auto-draft' )",
+				self::BOOK_META,
+				$book_id,
+				Chapters::POST_TYPE,
+				$exclude_id
+			)
+		);
+		return ( null === $max ) ? 0 : (int) $max + 1;
+	}
+
+	/**
 	 * A book Page addressed by its full path (a chapter URL's prefix).
 	 */
 	public static function get_book_by_path( string $path ): ?\WP_Post {

@@ -242,7 +242,7 @@ final class Admin {
 			// than collide at the top. The author can then reorder freely.
 			$submitted_order = isset( $_POST['menu_order'] ) ? (int) $_POST['menu_order'] : 0;
 			if ( $book_id !== $prev_book && 0 === $submitted_order ) {
-				$next = self::next_menu_order_in_book( $book_id, $post_id );
+				$next = Books::next_menu_order( $book_id, $post_id );
 				if ( $next !== (int) $post->menu_order ) {
 					// Write menu_order directly to avoid re-entering save_post.
 					global $wpdb;
@@ -259,26 +259,6 @@ final class Admin {
 		} else {
 			delete_post_meta( $post_id, Chapters::SECTION_META );
 		}
-	}
-
-	/**
-	 * The menu_order one past the last chapter in a book (0 for an empty book).
-	 */
-	private static function next_menu_order_in_book( int $book_id, int $exclude_id ): int {
-		global $wpdb;
-		$max = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT MAX(p.menu_order) FROM {$wpdb->posts} p
-				 INNER JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = %s
-				 WHERE m.meta_value = %d AND p.post_type = %s AND p.ID <> %d
-				 AND p.post_status NOT IN ( 'trash', 'auto-draft' )",
-				Books::BOOK_META,
-				$book_id,
-				Chapters::POST_TYPE,
-				$exclude_id
-			)
-		);
-		return ( null === $max ) ? 0 : (int) $max + 1;
 	}
 
 	public static function columns( array $columns ): array {

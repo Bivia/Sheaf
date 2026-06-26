@@ -19,7 +19,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Books_Admin {
 
-	private const PAGE       = 'sheaf-books';
+	/** Top-level menu slug; other Sheaf screens hang their submenus off it. */
+	public const MENU_SLUG = 'sheaf-books';
+
+	private const PAGE       = self::MENU_SLUG;
 	private const CAPABILITY = 'edit_posts';
 	private const NONCE      = 'sheaf_reorder';
 
@@ -202,13 +205,15 @@ final class Books_Admin {
 
 			echo '<tr>';
 			printf(
-				'<td><strong><a href="%1$s">%2$s</a></strong><div class="row-actions"><span><a href="%3$s">%4$s</a> | </span><span><a href="%5$s">%6$s</a></span></div></td>',
+				'<td><strong><a href="%1$s">%2$s</a></strong><div class="row-actions"><span><a href="%3$s">%4$s</a> | </span><span><a href="%5$s">%6$s</a> | </span><span><a href="%7$s">%8$s</a></span></div></td>',
 				esc_url( $manage ),
 				esc_html( get_the_title( $book_id ) ),
 				esc_url( (string) get_edit_post_link( $book_id ) ),
 				esc_html__( 'Edit page', 'sheaf' ),
 				esc_url( $add_url ),
-				esc_html__( 'Add chapter', 'sheaf' )
+				esc_html__( 'Add chapter', 'sheaf' ),
+				esc_url( Import::url( $book_id ) ),
+				esc_html__( 'Import', 'sheaf' )
 			);
 			printf( '<td>%s</td>', esc_html( $context ) );
 			printf(
@@ -243,10 +248,12 @@ final class Books_Admin {
 		);
 
 		printf(
-			'<h1 class="wp-heading-inline">%1$s</h1> <a href="%2$s" class="page-title-action">%3$s</a> <a href="%4$s" class="page-title-action">%5$s</a>',
+			'<h1 class="wp-heading-inline">%1$s</h1> <a href="%2$s" class="page-title-action">%3$s</a> <a href="%4$s" class="page-title-action">%5$s</a> <a href="%6$s" class="page-title-action">%7$s</a>',
 			esc_html( get_the_title( $book_id ) ),
 			esc_url( $add_url ),
 			esc_html__( 'Add chapter', 'sheaf' ),
+			esc_url( Import::url( $book_id ) ),
+			esc_html__( 'Import chapters', 'sheaf' ),
 			esc_url( $back ),
 			esc_html__( 'All books', 'sheaf' )
 		);
