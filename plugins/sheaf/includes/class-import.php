@@ -186,13 +186,17 @@ final class Import {
 	}
 
 	/**
-	 * A books-only dropdown (plus "unassigned"), like the chapter editor.
+	 * The "Add to book" selector: a books-only dropdown (plus "unassigned") with
+	 * a "Show all pages" toggle that swaps in the full page list — mirroring the
+	 * Book selector on the chapter editor.
 	 */
 	private static function book_select( int $selected ): void {
 		$book_ids = Books::all_book_ids();
 		if ( $selected && ! in_array( $selected, $book_ids, true ) ) {
 			$book_ids[] = $selected;
 		}
+
+		// Books-only selector (the default).
 		echo '<select name="sheaf_book" id="sheaf-import-book">';
 		printf( '<option value="0">%s</option>', esc_html__( '— Unassigned —', 'sheaf' ) );
 		foreach ( $book_ids as $bid ) {
@@ -204,6 +208,55 @@ final class Import {
 			);
 		}
 		echo '</select>';
+
+		// The full page list, hidden and disabled until "show all pages" is
+		// ticked. Disabled controls aren't submitted, so only one value is sent.
+		$all = (string) wp_dropdown_pages(
+			[
+				'name'              => 'sheaf_book',
+				'id'                => 'sheaf-import-book-all',
+				'selected'          => $selected,
+				'show_option_none'  => __( '— Unassigned —', 'sheaf' ),
+				'option_none_value' => 0,
+				'echo'              => 0,
+			]
+		);
+		$all = preg_replace( '/<select /', '<select disabled ', $all, 1 );
+		echo ' <span id="sheaf-import-book-all-wrap" style="display:none">' . $all . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_dropdown_pages output.
+
+		printf(
+			'<p><label><input type="checkbox" id="sheaf-import-book-allpages"> %s</label></p>',
+			esc_html__( 'Show all pages', 'sheaf' )
+		);
+		echo '<p class="description" id="sheaf-import-book-allpages-note" style="display:none">'
+			. esc_html__( 'Adding a Chapter to a Page turns that Page into a Book.', 'sheaf' )
+			. '</p>';
+		?>
+		<script>
+		( function () {
+			var cb    = document.getElementById( 'sheaf-import-book-allpages' );
+			var books = document.getElementById( 'sheaf-import-book' );
+			var wrap  = document.getElementById( 'sheaf-import-book-all-wrap' );
+			var all   = document.getElementById( 'sheaf-import-book-all' );
+			var note  = document.getElementById( 'sheaf-import-book-allpages-note' );
+			if ( ! cb || ! books || ! all ) { return; }
+			cb.addEventListener( 'change', function () {
+				if ( cb.checked ) {
+					all.value = books.value;
+					books.disabled = true;  books.style.display = 'none';
+					all.disabled = false;   wrap.style.display = '';
+					note.style.display = '';
+				} else {
+					var match = Array.prototype.some.call( books.options, function ( o ) { return o.value === all.value; } );
+					books.value = match ? all.value : '0';
+					all.disabled = true;    wrap.style.display = 'none';
+					books.disabled = false; books.style.display = '';
+					note.style.display = 'none';
+				}
+			} );
+		} )();
+		</script>
+		<?php
 	}
 
 	/**
