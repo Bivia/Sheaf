@@ -5,7 +5,7 @@
  * Version:           0.2.0
  * Requires at least: 7.0
  * Requires PHP:      8.3
- * Author:            Sheaf
+ * Author:            Bivia
  * License:           GPL-2.0-or-later
  * Text Domain:       sheaf
  *
