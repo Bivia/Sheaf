@@ -1,0 +1,57 @@
+name: Release Sheaf
+
+# Publish a plugin zip when a version tag is pushed. A release is produced ONLY
+# when the tagged commit is already merged into master, so feature-branch tags
+# never yield an artifact and master is the only branch that ships zips.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so we can test the tag's ancestry against master
+
+      - name: Require the tag to be merged into master
+        run: |
+          git fetch --no-tags origin master
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is contained in master. Proceeding."
+          else
+            echo "::error::Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not merged into master. Refusing to release."
+            exit 1
+          fi
+
+      - name: Require the tag to match the plugin version
+        run: |
+          header="$(grep -oP '^\s*\*\s*Version:\s*\K[0-9][0-9.]*' plugins/sheaf/sheaf.php)"
+          tag="${GITHUB_REF_NAME#v}"
+          echo "Plugin header version: $header   Tag version: $tag"
+          if [ "$header" != "$tag" ]; then
+            echo "::error::Tag ($tag) does not match the plugin's Version header ($header). Bump sheaf.php before tagging."
+            exit 1
+          fi
+
+      - name: Build plugin zip
+        run: |
+          mkdir -p build
+          # Copy the plugin under a top-level "sheaf/" folder so it installs in place.
+          rsync -a --exclude='.git' --exclude='node_modules' plugins/sheaf/ build/sheaf/
+          ( cd build && zip -qr ../sheaf.zip sheaf )
+          echo "Zip contents (first lines):"
+          unzip -l sheaf.zip | head -n 20
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Sheaf ${{ github.ref_name }}
+          files: sheaf.zip
+          generate_release_notes: true

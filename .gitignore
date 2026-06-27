@@ -6,6 +6,11 @@ node_modules/
 vendor/
 build/
 
+# Exception: plugin-update-checker is vendored into the plugin and ships with
+# it, including the library's own bundled vendor/ (Parsedown + readme parser).
+!plugins/sheaf/lib/plugin-update-checker/vendor/
+!plugins/sheaf/lib/plugin-update-checker/vendor/**
+
 # Logs & OS/editor cruft
 *.log
 .DS_Store

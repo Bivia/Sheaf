@@ -35,9 +35,11 @@ require_once SHEAF_DIR . 'includes/class-books-admin.php';
 require_once SHEAF_DIR . 'includes/class-docx-reader.php';
 require_once SHEAF_DIR . 'includes/class-import-serializer.php';
 require_once SHEAF_DIR . 'includes/class-import.php';
+require_once SHEAF_DIR . 'includes/class-updater.php';
 require_once SHEAF_DIR . 'includes/class-plugin.php';
 
 Plugin::instance()->boot();
+Updater::register();
 
 register_activation_hook( __FILE__, [ Plugin::class, 'activate' ] );
 register_deactivation_hook( __FILE__, [ Plugin::class, 'deactivate' ] );
