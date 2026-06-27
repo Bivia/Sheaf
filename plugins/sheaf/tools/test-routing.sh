@@ -32,6 +32,11 @@ check_contains() {
 	if curl -s "$BASE/$1/" | grep -q "$2"; then ok "/$1/ — $3"; else ng "/$1/ — $3"; fi
 }
 
+# check_absent <path> <substring> <label> — passes when the substring is NOT present
+check_absent() {
+	if curl -s "$BASE/$1/" | grep -q "$2"; then ng "/$1/ — $3"; else ok "/$1/ — $3"; fi
+}
+
 echo "Seeding known state…"
 "$WPENV" run cli wp eval-file wp-content/plugins/sheaf/tools/seed.php >/dev/null 2>&1
 
@@ -70,7 +75,36 @@ check_contains "novels/gearfall/stormgear/prologue" "Stormgear" "breadcrumb name
 echo "Section view carries the CSS hook:"
 check_contains "novels/gearfall/mainspring/part-i-wind-up" "sheaf-section" "body class sheaf-section"
 
+echo "Series-level spin-off stories (a chapter hung directly on a Series Page):"
+check_status   "novels/long-war/a-candle-for-the-drowned" 200
+check_contains "novels/long-war/a-candle-for-the-drowned" "The Long War" "spin-off breadcrumbs to its series"
+
+echo "Sub-page collision guard — a coda asking for the slug 'embers' must not shadow the Book:"
+# The Book Page must still answer at /novels/long-war/embers (not the coda).
+check_status "novels/long-war/embers" 200
+check_absent "novels/long-war/embers" "Embers: A Coda" "/embers loads the Book, not the coda"
+# The coda survives, reachable at the guard-rewritten slug.
+check_status   "novels/long-war/embers-2" 200
+check_contains "novels/long-war/embers-2" "Embers: A Coda" "coda reachable at embers-2"
+
 echo "Data-layer checks:"
+g="$("$WPENV" run cli wp eval '
+$s  = get_page_by_path("novels/long-war");
+$id = $s ? (int) $s->ID : 0;
+$c  = \Sheaf\Books::slug_collides_with_book_subpage("embers", $id) ? "1" : "0";
+$b  = ( \Sheaf\Books::unique_chapter_slug("embers", $id) !== "embers" ) ? "1" : "0";
+$f  = \Sheaf\Books::slug_collides_with_book_subpage("a-candle-for-the-drowned", $id) ? "0" : "1";
+echo $c . $b . $f;
+' 2>/dev/null | tr -dc '0-9')"
+if [ "$g" = "111" ]; then ok "guard: 'embers' collides+bumps, clean slug passes"; else ng "guard predicate expected 111, got $g"; fi
+
+slug="$("$WPENV" run cli wp eval '
+$s = get_page_by_path("novels/long-war");
+$p = $s ? get_posts(["post_type"=>"sheaf_chapter","title"=>"Embers: A Coda","numberposts"=>1,"meta_key"=>"_sheaf_book","meta_value"=>$s->ID]) : [];
+echo $p ? $p[0]->post_name : "none";
+' 2>/dev/null | tr -dc 'a-z0-9-')"
+if [ "$slug" = "embers-2" ]; then ok "coda stored with guard-rewritten slug embers-2"; else ng "coda slug expected embers-2, got $slug"; fi
+
 n="$("$WPENV" run cli wp eval 'echo count(get_posts(["post_type"=>"sheaf_chapter","name"=>"prologue","post_status"=>"publish","numberposts"=>-1]));' 2>/dev/null | tr -dc '0-9')"
 if [ "$n" = "5" ]; then ok "5 chapters stored with the slug 'prologue'"; else ng "expected 5 'prologue' slugs, got $n"; fi
 

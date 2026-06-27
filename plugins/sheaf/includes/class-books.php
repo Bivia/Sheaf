@@ -320,16 +320,50 @@ final class Books {
 	/**
 	 * A slug unique *within a book*: $base if free, else base-2, base-3, …
 	 * (uniqueness is per book, so a different book may reuse the same base).
+	 *
+	 * "Free" means no other chapter in the book holds the slug AND it does not
+	 * collide with a child Page of the book Page — see
+	 * slug_collides_with_book_subpage().
 	 */
 	public static function unique_chapter_slug( string $base, int $book_id, int $ignore_id = 0 ): string {
-		if ( ! self::slug_taken_in_book( $base, $book_id, $ignore_id ) ) {
+		if ( ! self::chapter_slug_unavailable( $base, $book_id, $ignore_id ) ) {
 			return $base;
 		}
 		$suffix = 2;
 		do {
 			$candidate = $base . '-' . $suffix;
 			++$suffix;
-		} while ( self::slug_taken_in_book( $candidate, $book_id, $ignore_id ) );
+		} while ( self::chapter_slug_unavailable( $candidate, $book_id, $ignore_id ) );
 		return $candidate;
+	}
+
+	/**
+	 * Whether a slug cannot be used for a chapter in this book — either another
+	 * chapter already holds it, or it would collide with a child Page's URL.
+	 */
+	private static function chapter_slug_unavailable( string $slug, int $book_id, int $ignore_id ): bool {
+		return self::slug_taken_in_book( $slug, $book_id, $ignore_id )
+			|| self::slug_collides_with_book_subpage( $slug, $book_id );
+	}
+
+	/**
+	 * Whether a chapter slug would collide with a real Page nested under the book
+	 * Page. A chapter's URL is "<book path>/<slug>"; if a Page already lives at
+	 * that exact path, request routing resolves the Page (get_page_by_path wins
+	 * in Permalinks::route_request) and the chapter would be unreachable.
+	 *
+	 * This only matters when chapters are attached to a Page that has child Pages
+	 * — e.g. a spin-off story hung directly on a Series Page whose children are
+	 * its Books. A normal (leaf) Book Page has no child Pages, so this never trips.
+	 */
+	public static function slug_collides_with_book_subpage( string $slug, int $book_id ): bool {
+		if ( ! $book_id || '' === $slug ) {
+			return false;
+		}
+		$base = get_page_uri( $book_id );
+		if ( ! $base ) {
+			return false;
+		}
+		return get_page_by_path( trailingslashit( $base ) . $slug, OBJECT, 'page' ) instanceof \WP_Post;
 	}
 }

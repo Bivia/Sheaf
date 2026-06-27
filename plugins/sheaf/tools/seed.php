@@ -146,25 +146,35 @@ if ( ! function_exists( 'sheaf_seed_filler' ) ) {
 			$items .= '<li><a href="' . esc_url( get_permalink( $bid ) ) . '">' . esc_html( get_the_title( $bid ) ) . '</a></li>';
 		}
 		$list = "<!-- wp:list -->\n<ul class=\"wp-block-list\">{$items}</ul>\n<!-- /wp:list -->";
-		return sheaf_seed_blurb( $seed ) . "\n\n" . $list;
+		// A Series Page may also carry its own chapters — spin-off stories set in
+		// the shared world but belonging to no single book. [sheaf_toc] lists them
+		// and renders nothing when there are none.
+		$toc = "<!-- wp:shortcode -->\n[sheaf_toc]\n<!-- /wp:shortcode -->";
+		return sheaf_seed_blurb( $seed ) . "\n\n" . $list . "\n\n" . $toc;
 	}
 
 	/**
 	 * Upsert a chapter by (book, slug). Returns its ID.
 	 */
-	function sheaf_seed_chapter( int $book_id, string $slug, string $title, int $order, string $content, bool $is_section = false ): int {
+	function sheaf_seed_chapter( int $book_id, string $slug, string $title, int $order, string $content, bool $is_section = false, bool $match_by_title = false ): int {
 		\Sheaf\Books::set_book_context( $book_id );
 
-		$existing = get_posts(
-			[
-				'post_type'   => \Sheaf\Chapters::POST_TYPE,
-				'name'        => $slug,
-				'post_status' => 'any',
-				'numberposts' => 1,
-				'meta_key'    => \Sheaf\Books::BOOK_META,
-				'meta_value'  => $book_id,
-			]
-		);
+		// Most chapters are re-found by (book, slug). Spin-offs whose slug may be
+		// rewritten by the sub-page collision guard can't be — match them by
+		// (book, title) instead so re-seeding reconciles rather than duplicates.
+		$query = [
+			'post_type'   => \Sheaf\Chapters::POST_TYPE,
+			'post_status' => 'any',
+			'numberposts' => 1,
+			'meta_key'    => \Sheaf\Books::BOOK_META,
+			'meta_value'  => $book_id,
+		];
+		if ( $match_by_title ) {
+			$query['title'] = $title;
+		} else {
+			$query['name'] = $slug;
+		}
+		$existing = get_posts( $query );
 		$data = [
 			'post_title'   => $title,
 			'post_type'    => \Sheaf\Chapters::POST_TYPE,
@@ -279,6 +289,24 @@ foreach ( $chapters as $book_id => $list ) {
 	}
 }
 
+// --- Series-level spin-offs: chapters hung directly on a Series Page ----------
+//
+// A Series Page is just a Page, so a chapter can attach to it — e.g. a short
+// story set in the series' shared world but belonging to no single book. These
+// fixtures illustrate that use case (and the routing tests guard it):
+//
+//   * "A Candle for the Drowned" attaches cleanly at
+//     /novels/long-war/a-candle-for-the-drowned.
+//   * "Embers: A Coda" deliberately asks for the slug "embers", which already
+//     belongs to the child Book Page /novels/long-war/embers. The sub-page
+//     collision guard rewrites it (to "embers-2") so the coda stays reachable
+//     instead of being shadowed by the Book Page.
+//
+// They are matched by title on re-seed, since the coda's stored slug differs
+// from the requested one.
+sheaf_seed_chapter( $long_war, 'a-candle-for-the-drowned', 'A Candle for the Drowned', 0, sheaf_seed_filler( 'candle' ), false, true );
+sheaf_seed_chapter( $long_war, 'embers', 'Embers: A Coda', 1, sheaf_seed_filler( 'coda' ), false, true );
+
 // A blog post elsewhere on the site (kept under /%postname%/).
 if ( ! get_page_by_path( 'title-text', OBJECT, 'post' ) ) {
 	wp_insert_post(
@@ -294,4 +322,4 @@ if ( ! get_page_by_path( 'title-text', OBJECT, 'post' ) ) {
 
 flush_rewrite_rules();
 
-WP_CLI::success( 'Sheaf seed complete. Books: Embers, Ashfall, Mainspring, Stormgear, Wintering (5 chapters each).' );
+WP_CLI::success( 'Sheaf seed complete. Books: Embers, Ashfall, Mainspring, Stormgear, Wintering (5 chapters each), plus 2 spin-off chapters on the "The Long War" series Page.' );
