@@ -301,36 +301,75 @@ final class Import {
 			: [];
 		$settings = Import_Serializer::sanitize_settings( $raw );
 
-		$options                      = self::style_options( $book );
-		$settings['style_map']        = self::read_style_map( 'char_map', $options['inline'] );
-		$settings['block_style_map']  = self::read_style_map( 'para_map', $options['block'] );
+		// The author's per-Word-style choices: "" (ignore), an existing style's
+		// class, or "new:<set>" (create one). Kept so the dropdowns remember the
+		// selection; the existing-class ones become the preview maps.
+		$options                     = self::style_options( $book );
+		$settings['char_choices']    = self::read_choices( 'char_map', $options, 'inline' );
+		$settings['para_choices']    = self::read_choices( 'para_map', $options, 'block' );
+		$settings['style_map']       = self::existing_class_map( $settings['char_choices'] );
+		$settings['block_style_map'] = self::existing_class_map( $settings['para_choices'] );
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
+		$settings['new_set'] = isset( $_POST['new_set'] ) ? sanitize_text_field( wp_unslash( $_POST['new_set'] ) ) : '';
+
 		return $settings;
 	}
 
 	/**
-	 * Read a Word-style => CSS-class map from the request, keeping only classes
-	 * that belong to the book's active styles (so a forged class can't slip in).
+	 * Read a Word-style => choice map from the request, validated against the
+	 * book's active styles. A choice is "" (ignore), an existing style's class,
+	 * or "new:<set-slug>" for a set the book actually activates.
 	 *
-	 * @param array<int,array<string,string>> $options Allowed style options.
+	 * @param array<string,mixed> $options style_options() output.
 	 * @return array<string,string>
 	 */
-	private static function read_style_map( string $field, array $options ): array {
+	private static function read_choices( string $field, array $options, string $kind ): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
 		$raw = isset( $_POST[ $field ] ) && is_array( $_POST[ $field ] )
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			? (array) wp_unslash( $_POST[ $field ] )
 			: [];
 
-		$allowed = [];
-		foreach ( $options as $opt ) {
-			$allowed[ $opt['class'] ] = true;
+		$classes = [];
+		foreach ( (array) ( $options[ $kind ] ?? [] ) as $opt ) {
+			$classes[ $opt['class'] ] = true;
+		}
+		$sets = [];
+		foreach ( (array) ( $options['sets'] ?? [] ) as $set ) {
+			$sets[ $set['slug'] ] = true;
 		}
 
+		$out = [];
+		foreach ( $raw as $word => $choice ) {
+			$choice = (string) $choice;
+			if ( 0 === strpos( $choice, 'new:' ) ) {
+				$set = sanitize_key( substr( $choice, 4 ) );
+				if ( isset( $sets[ $set ] ) ) {
+					$out[ (string) $word ] = 'new:' . $set;
+				}
+			} else {
+				$class = sanitize_html_class( $choice );
+				if ( '' !== $class && isset( $classes[ $class ] ) ) {
+					$out[ (string) $word ] = $class;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The subset of choices that are existing classes (ready to apply now). The
+	 * "new:<set>" choices are resolved later, at create time.
+	 *
+	 * @param array<string,string> $choices
+	 * @return array<string,string>
+	 */
+	private static function existing_class_map( array $choices ): array {
 		$map = [];
-		foreach ( $raw as $word_style => $class ) {
-			$class = sanitize_html_class( (string) $class );
-			if ( '' !== $class && isset( $allowed[ $class ] ) ) {
-				$map[ (string) $word_style ] = $class;
+		foreach ( $choices as $word => $choice ) {
+			if ( '' !== $choice && 0 !== strpos( $choice, 'new:' ) ) {
+				$map[ $word ] = $choice;
 			}
 		}
 		return $map;
@@ -348,20 +387,26 @@ final class Import {
 		$out = [
 			'inline' => [],
 			'block'  => [],
+			'sets'   => [],
 		];
 		foreach ( Style_Sets::active_sets( $book ) as $set ) {
 			$set_data = Style_Sets::get_set( $set );
 			if ( ! $set_data ) {
 				continue;
 			}
-			$set_label = '' !== (string) ( $set_data['label'] ?? '' ) ? (string) $set_data['label'] : (string) $set;
+			$set_label    = '' !== (string) ( $set_data['label'] ?? '' ) ? (string) $set_data['label'] : (string) $set;
+			$out['sets'][] = [
+				'slug'  => (string) $set,
+				'label' => $set_label,
+			];
 			foreach ( (array) ( $set_data['styles'] ?? [] ) as $style => $def ) {
 				$kind  = in_array( $def['kind'] ?? 'inline', Style_Sets::KINDS, true ) ? (string) $def['kind'] : 'inline';
 				$label = '' !== (string) ( $def['label'] ?? '' ) ? (string) $def['label'] : (string) $style;
 				$out[ 'block' === $kind ? 'block' : 'inline' ][] = [
-					'class' => Style_Sets::css_class( (string) $set, (string) $style, $kind ),
-					'label' => $label,
-					'set'   => $set_label,
+					'class'    => Style_Sets::css_class( (string) $set, (string) $style, $kind ),
+					'label'    => $label,
+					'set'      => $set_label,
+					'set_slug' => (string) $set,
 				];
 			}
 		}
@@ -612,7 +657,9 @@ final class Import {
 		echo '<h2>' . esc_html__( 'Keep formatting', 'sheaf' ) . '</h2>';
 		self::settings_fields( $settings );
 
-		self::render_style_mapping( $book, $entries, $settings );
+		// Pass the raw settings (sanitize_settings drops the choice fields the
+		// mapping UI needs to remember the author's selections).
+		self::render_style_mapping( $book, $entries, (array) $data['settings'] );
 
 		echo '<p class="submit">';
 		printf(
@@ -687,30 +734,14 @@ final class Import {
 		echo '<h2>' . esc_html__( 'Word styles', 'sheaf' ) . '</h2>';
 
 		$options = self::style_options( $book );
-		if ( ! $options['inline'] && ! $options['block'] ) {
-			$message = __( 'Named Word styles were found, but this book has no active style sets to map them to. Activate style sets on the book’s screen, then re-import.', 'sheaf' );
-			if ( $book ) {
-				$book_url = add_query_arg(
-					[
-						'post_type' => Chapters::POST_TYPE,
-						'page'      => Books_Admin::MENU_SLUG,
-						'book'      => $book,
-					],
-					admin_url( 'edit.php' )
-				);
-				printf(
-					'<p class="description">%1$s <a href="%2$s">%3$s</a></p>',
-					esc_html( $message ),
-					esc_url( $book_url ),
-					esc_html__( 'Open the book’s screen', 'sheaf' )
-				);
-			} else {
-				printf( '<p class="description">%s</p>', esc_html( $message ) );
-			}
+
+		// No active sets: offer to create one from the found styles (C2).
+		if ( ! $options['sets'] ) {
+			self::render_create_set_from_found( $detected, $settings );
 			return;
 		}
 
-		echo '<p class="description">' . esc_html__( 'Map named Word styles found in these files to your style-set styles. Unmapped styles are imported as plain text.', 'sheaf' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Map named Word styles found in these files to your style-set styles. You can add a found style to a set as a new style, map it to an existing one, or ignore it (imported as plain text).', 'sheaf' ) . '</p>';
 
 		echo '<table class="wp-list-table widefat fixed striped"><thead><tr>';
 		echo '<th>' . esc_html__( 'Word style', 'sheaf' ) . '</th>';
@@ -718,48 +749,111 @@ final class Import {
 		echo '<th>' . esc_html__( 'Maps to', 'sheaf' ) . '</th>';
 		echo '</tr></thead><tbody>';
 
-		self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options['inline'], (array) ( $settings['style_map'] ?? [] ) );
-		self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options['block'], (array) ( $settings['block_style_map'] ?? [] ) );
+		self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options, 'inline', (array) ( $settings['char_choices'] ?? [] ) );
+		self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options, 'block', (array) ( $settings['para_choices'] ?? [] ) );
 
 		echo '</tbody></table>';
 	}
 
 	/**
-	 * One sub-group of the Word-style mapping table.
+	 * One sub-group of the Word-style mapping table. Each found style can map to
+	 * "— Ignore —", a new style in one of the book's sets ("new:<set>"), or an
+	 * existing style (its class), grouped by set.
 	 *
-	 * @param array<string,int>               $detected Word style name => uses.
-	 * @param array<int,array<string,string>> $options  Allowed target styles.
-	 * @param array<string,string>            $current  Word style name => class.
+	 * @param array<string,int>    $detected Word style name => uses.
+	 * @param array<string,mixed>  $options  style_options() output.
+	 * @param array<string,string> $choices  Word style name => current choice.
 	 */
-	private static function mapping_rows( string $heading, array $detected, string $field, array $options, array $current ): void {
+	private static function mapping_rows( string $heading, array $detected, string $field, array $options, string $kind, array $choices ): void {
 		if ( ! $detected ) {
 			return;
 		}
 		printf( '<tr><th colspan="3" scope="rowgroup">%s</th></tr>', esc_html( $heading ) );
 
 		foreach ( $detected as $name => $count ) {
+			$selected = (string) ( $choices[ (string) $name ] ?? '' );
+
 			echo '<tr>';
-			printf( '<td><code>%s</code></td>', esc_html( $name ) );
+			printf( '<td><code>%s</code></td>', esc_html( (string) $name ) );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $count ) ) );
 			echo '<td>';
-			if ( ! $options ) {
-				echo '<span class="description">' . esc_html__( 'No matching styles available.', 'sheaf' ) . '</span>';
-			} else {
-				$selected = (string) ( $current[ $name ] ?? '' );
-				printf( '<select name="%1$s[%2$s]">', esc_attr( $field ), esc_attr( (string) $name ) );
-				printf( '<option value="">%s</option>', esc_html__( '— Ignore —', 'sheaf' ) );
-				foreach ( $options as $opt ) {
+			printf( '<select name="%1$s[%2$s]">', esc_attr( $field ), esc_attr( (string) $name ) );
+			printf( '<option value=""%1$s>%2$s</option>', selected( $selected, '', false ), esc_html__( '— Ignore —', 'sheaf' ) );
+
+			foreach ( $options['sets'] as $set ) {
+				// "Add as a new style" in this set.
+				$new_val = 'new:' . $set['slug'];
+				printf(
+					'<option value="%1$s"%2$s>%3$s</option>',
+					esc_attr( $new_val ),
+					selected( $selected, $new_val, false ),
+					esc_html(
+						sprintf(
+							/* translators: 1: set name, 2: Word style name. */
+							__( '%1$s › %2$s [new style]', 'sheaf' ),
+							$set['label'],
+							(string) $name
+						)
+					)
+				);
+				// Existing styles of this set and kind.
+				foreach ( $options[ $kind ] as $opt ) {
+					if ( ( $opt['set_slug'] ?? '' ) !== $set['slug'] ) {
+						continue;
+					}
 					printf(
 						'<option value="%1$s"%2$s>%3$s</option>',
 						esc_attr( $opt['class'] ),
 						selected( $selected, $opt['class'], false ),
-						esc_html( $opt['set'] . ' › ' . $opt['label'] )
+						esc_html( $set['label'] . ' › ' . $opt['label'] )
 					);
 				}
-				echo '</select>';
 			}
-			echo '</td></tr>';
+
+			echo '</select></td></tr>';
 		}
+	}
+
+	/**
+	 * When the target book has no style sets but the files carry named styles,
+	 * offer to create a set containing all of them (C2). Leaving the name blank
+	 * skips the styles (imported as plain text).
+	 *
+	 * @param array{char:array<string,int>,para:array<string,int>} $detected
+	 * @param array<string,mixed>                                  $settings
+	 */
+	private static function render_create_set_from_found( array $detected, array $settings ): void {
+		$total = count( $detected['char'] ) + count( $detected['para'] );
+
+		echo '<p class="description">' . esc_html(
+			sprintf(
+				/* translators: %s: number of named styles. */
+				_n(
+					'%s named Word style was found, but this book has no style sets. Name a new set to create from it:',
+					'%s named Word styles were found, but this book has no style sets. Name a new set to create from them:',
+					$total,
+					'sheaf'
+				),
+				number_format_i18n( $total )
+			)
+		) . '</p>';
+
+		printf(
+			'<p><label>%1$s <input type="text" name="new_set" value="%2$s" class="regular-text" placeholder="%3$s"></label></p>',
+			esc_html__( 'New style set name', 'sheaf' ),
+			esc_attr( (string) ( $settings['new_set'] ?? '' ) ),
+			esc_attr__( 'e.g. Strange Voices', 'sheaf' )
+		);
+
+		echo '<ul style="margin-left:1.4em;list-style:disc">';
+		foreach ( array_keys( $detected['char'] ) as $word ) {
+			printf( '<li><code>%s</code> — %s</li>', esc_html( (string) $word ), esc_html__( 'inline style', 'sheaf' ) );
+		}
+		foreach ( array_keys( $detected['para'] ) as $word ) {
+			printf( '<li><code>%s</code> — %s</li>', esc_html( (string) $word ), esc_html__( 'paragraph style', 'sheaf' ) );
+		}
+		echo '</ul>';
+		echo '<p class="description">' . esc_html__( 'Leave the name blank to import these as plain text.', 'sheaf' ) . '</p>';
 	}
 
 	/**
@@ -801,6 +895,8 @@ final class Import {
 			exit;
 		}
 
+		// Create any new style sets / styles the author chose, then import.
+		$data    = self::resolve_style_choices( $data );
 		$created = self::create_drafts( $data );
 		self::forget( $token );
 
@@ -829,6 +925,86 @@ final class Import {
 		}
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	/**
+	 * Turn the author's style choices into real styles just before importing:
+	 *  - a "new set" name (C2) creates a set from every found style and activates
+	 *    it on the book;
+	 *  - "new:<set>" choices (C3) create a style named after the Word style.
+	 * The resulting classes are folded into the style maps the serializer uses.
+	 *
+	 * @param array<string,mixed> $data
+	 * @return array<string,mixed>
+	 */
+	private static function resolve_style_choices( array $data ): array {
+		$settings = (array) $data['settings'];
+		if ( empty( $settings['keep_named_styles'] ) ) {
+			return $data;
+		}
+
+		$book      = (int) $data['book'];
+		$detected  = self::collect_styles( (array) $data['entries'] );
+		$style_map = (array) ( $settings['style_map'] ?? [] );
+		$block_map = (array) ( $settings['block_style_map'] ?? [] );
+
+		// C2: build a whole new set from the found styles (only when there are
+		// no sets to choose from in the first place).
+		$new_set_name = trim( (string) ( $settings['new_set'] ?? '' ) );
+		if ( '' !== $new_set_name && ! Style_Sets::active_sets( $book ) ) {
+			$set = Style_Sets::save_set( $new_set_name );
+			foreach ( array_keys( $detected['char'] ) as $word ) {
+				$style                  = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'inline' ] );
+				$style_map[ (string) $word ] = Style_Sets::style_class( $set, $style );
+			}
+			foreach ( array_keys( $detected['para'] ) as $word ) {
+				$style                  = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'block' ] );
+				$block_map[ (string) $word ] = Style_Sets::css_class( $set, $style, 'block' );
+			}
+			if ( $book ) {
+				$active   = Style_Sets::active_sets( $book );
+				$active[] = $set;
+				update_post_meta( $book, Style_Sets::BOOK_META, array_values( array_unique( $active ) ) );
+			}
+		}
+
+		// C3: resolve "new:<set>" choices into freshly-created styles.
+		$style_map = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
+		$block_map = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
+
+		$settings['style_map']       = $style_map;
+		$settings['block_style_map'] = $block_map;
+		$data['settings']            = $settings;
+		return $data;
+	}
+
+	/**
+	 * Create a style (named after the Word style) for every "new:<set>" choice,
+	 * returning a Word-style => class map. Only sets the book activates are used.
+	 *
+	 * @param array<string,string> $choices
+	 * @return array<string,string>
+	 */
+	private static function create_new_styles( array $choices, string $kind, int $book ): array {
+		$active = Style_Sets::active_sets( $book );
+		$map    = [];
+		foreach ( $choices as $word => $choice ) {
+			if ( 0 !== strpos( (string) $choice, 'new:' ) ) {
+				continue;
+			}
+			$set = sanitize_key( substr( (string) $choice, 4 ) );
+			if ( '' === $set || ! in_array( $set, $active, true ) ) {
+				continue;
+			}
+			$style = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => $kind ] );
+			if ( '' === $style ) {
+				continue;
+			}
+			$map[ (string) $word ] = 'block' === $kind
+				? Style_Sets::css_class( $set, $style, 'block' )
+				: Style_Sets::style_class( $set, $style );
+		}
+		return $map;
 	}
 
 	/**
