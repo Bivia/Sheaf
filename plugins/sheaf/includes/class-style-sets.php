@@ -150,11 +150,32 @@ final class Style_Sets {
 	// --- Derived --------------------------------------------------------------
 
 	/**
-	 * The CSS class marking text that carries this style, e.g.
+	 * The CSS class marking inline text that carries this style, e.g.
 	 * "sheaf-style-talking-monsters-computer-voice".
 	 */
 	public static function style_class( string $set, string $style ): string {
 		return 'sheaf-style-' . $set . '-' . $style;
+	}
+
+	/**
+	 * The block-style variation name for a block-kind style. WordPress turns the
+	 * registered name into the "is-style-<name>" class on the block, so this is
+	 * the part we control.
+	 */
+	public static function block_style_name( string $set, string $style ): string {
+		return 'sheaf-' . $set . '-' . $style;
+	}
+
+	/**
+	 * The class the *content* actually carries for a style — the one the global
+	 * CSS targets. Inline styles use our own span class; block styles use the
+	 * "is-style-<name>" class WordPress applies for a paragraph block-style
+	 * variation. Either way a class means the same thing everywhere it appears.
+	 */
+	public static function css_class( string $set, string $style, string $kind ): string {
+		return 'block' === $kind
+			? 'is-style-' . self::block_style_name( $set, $style )
+			: self::style_class( $set, $style );
 	}
 
 	/**

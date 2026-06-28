@@ -34,6 +34,7 @@ final class Plugin {
 		Admin::register();
 		Books_Admin::register();
 		Style_Sets_Admin::register();
+		Style_Sets_Editor::register();
 		Import::register();
 	}
 

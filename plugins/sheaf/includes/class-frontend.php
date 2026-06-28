@@ -164,7 +164,8 @@ final class Frontend {
 				if ( '' === $decls ) {
 					continue;
 				}
-				$rules .= '.' . Style_Sets::style_class( (string) $set, (string) $style ) . ' { ' . $decls . " }\n";
+				$kind   = in_array( $def['kind'] ?? 'inline', Style_Sets::KINDS, true ) ? (string) $def['kind'] : 'inline';
+				$rules .= '.' . Style_Sets::css_class( (string) $set, (string) $style, $kind ) . ' { ' . $decls . " }\n";
 			}
 		}
 		return $rules;

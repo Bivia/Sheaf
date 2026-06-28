@@ -65,6 +65,9 @@ try {
 
 	// Class + declarations.
 	$check( 'sheaf-style-talking-monsters-computer-voice' === \Sheaf\Style_Sets::style_class( $set, $style ), 'style_class' );
+	$check( 'sheaf-style-talking-monsters-computer-voice' === \Sheaf\Style_Sets::css_class( $set, $style, 'inline' ), 'css_class inline -> span class' );
+	$check( 'is-style-sheaf-talking-monsters-computer-voice' === \Sheaf\Style_Sets::css_class( $set, $style, 'block' ), 'css_class block -> is-style class' );
+	$check( 'sheaf-talking-monsters-computer-voice' === \Sheaf\Style_Sets::block_style_name( $set, $style ), 'block_style_name' );
 	$decl = \Sheaf\Style_Sets::declarations( $s );
 	$check( false !== strpos( $decl, 'font-family:' ), 'declarations include a prop' );
 	$check( false === strpos( $decl, '{' ), 'declarations carry no braces' );
