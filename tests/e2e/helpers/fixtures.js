@@ -129,6 +129,29 @@ function chapterBook( chapterId ) {
 	return out.book;
 }
 
+// The set slugs a book activates (for asserting activation/bulk-assign).
+function activeSets( bookId ) {
+	return wpEvalJson( `echo wp_json_encode( \\Sheaf\\Style_Sets::active_sets( ${ Number( bookId ) } ) );` );
+}
+
+// Catch-all cleanup: delete any style set whose slug starts with "e2e" and any
+// page/chapter whose title starts with "E2E " — so a UI-driven spec leaves the
+// author's real library and content untouched even if it created things by name.
+function cleanupE2E() {
+	const php = `
+		foreach ( array_keys( \\Sheaf\\Style_Sets::all() ) as $slug ) {
+			if ( 0 === strpos( $slug, 'e2e' ) ) { \\Sheaf\\Style_Sets::delete_set( $slug ); }
+		}
+		foreach ( [ 'page', 'sheaf_chapter' ] as $pt ) {
+			foreach ( get_posts( [ 'post_type' => $pt, 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ] ) as $id ) {
+				if ( 0 === strpos( (string) get_the_title( $id ), 'E2E ' ) ) { wp_delete_post( $id, true ); }
+			}
+		}
+		echo 'ok';
+	`;
+	wpEval( php );
+}
+
 module.exports = {
 	setupStyleFixture,
 	teardownStyleFixture,
@@ -139,4 +162,6 @@ module.exports = {
 	setupSelectorFixture,
 	teardownSelectorFixture,
 	chapterBook,
+	activeSets,
+	cleanupE2E,
 };
