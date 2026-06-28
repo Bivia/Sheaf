@@ -34,7 +34,7 @@ final class Books_Admin {
 		add_action( 'admin_menu', [ self::class, 'add_page' ] );
 		add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue' ] );
 		add_action( 'wp_ajax_sheaf_reorder', [ self::class, 'ajax_reorder' ] );
-		add_action( 'admin_post_sheaf_book_style_sets', [ self::class, 'save_book_sets' ] );
+		add_action( 'wp_ajax_sheaf_book_style_sets', [ self::class, 'ajax_save_book_sets' ] );
 
 		// Keep the "Sheafs" menu open/highlighted on the (menu-hidden) chapter
 		// list and editor screens.
@@ -125,6 +125,28 @@ final class Books_Admin {
 				'nonce'      => wp_create_nonce( self::NONCE ),
 				'savingText' => __( 'Saving…', 'sheaf' ),
 				'savedText'  => __( 'Order saved.', 'sheaf' ),
+				'failedText' => __( 'Save failed.', 'sheaf' ),
+			]
+		);
+
+		// Auto-save for the per-book "Style sets" checkboxes.
+		$ss_asset = SHEAF_DIR . 'assets/admin-book-style-sets.js';
+		$ss_ver   = file_exists( $ss_asset ) ? (string) filemtime( $ss_asset ) : SHEAF_VERSION;
+		wp_enqueue_script(
+			'sheaf-book-style-sets',
+			SHEAF_URL . 'assets/admin-book-style-sets.js',
+			[],
+			$ss_ver,
+			true
+		);
+		wp_localize_script(
+			'sheaf-book-style-sets',
+			'SheafBookStyleSets',
+			[
+				'ajax'       => admin_url( 'admin-ajax.php' ),
+				'nonce'      => wp_create_nonce( self::STYLE_NONCE ),
+				'savingText' => __( 'Saving…', 'sheaf' ),
+				'savedText'  => __( 'Saved.', 'sheaf' ),
 				'failedText' => __( 'Save failed.', 'sheaf' ),
 			]
 		);
@@ -272,11 +294,6 @@ final class Books_Admin {
 	}
 
 	private static function render_book( int $book_id ): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only confirmation flag.
-		if ( isset( $_GET['sheaf_msg'] ) && 'sets-saved' === $_GET['sheaf_msg'] ) {
-			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Style sets updated.', 'sheaf' ) . '</p></div>';
-		}
-
 		$chapters = Books::get_chapters_for_admin( $book_id );
 		$back     = add_query_arg(
 			[
@@ -377,21 +394,16 @@ final class Books_Admin {
 
 		$active = Style_Sets::active_sets( $book_id );
 
-		echo '<p class="description">' . esc_html__( 'Choose which style sets this book’s chapters may use. This controls what the editor and importer offer; it does not change styling already applied.', 'sheaf' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Choose which style sets this book’s chapters may use. This controls what the editor and importer offer; it does not change styling already applied. Changes save automatically.', 'sheaf' ) . '</p>';
 
-		echo '<style>.sheaf-style-set-list{margin:.6em 0 1em}.sheaf-style-set-list li{margin:.25em 0}.sheaf-style-set-list .description{margin-left:.4em}</style>';
+		echo '<style>.sheaf-style-set-list{margin:.6em 0 .4em}.sheaf-style-set-list li{margin:.25em 0}.sheaf-style-set-list .description{margin-left:.4em}</style>';
 
-		printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
-		wp_nonce_field( self::STYLE_NONCE );
-		echo '<input type="hidden" name="action" value="sheaf_book_style_sets">';
-		printf( '<input type="hidden" name="book" value="%d">', $book_id );
-
-		echo '<ul class="sheaf-style-set-list">';
+		printf( '<ul class="sheaf-style-set-list" data-book="%d">', $book_id );
 		foreach ( $all as $set => $data ) {
 			$label = '' !== (string) ( $data['label'] ?? '' ) ? (string) $data['label'] : (string) $set;
 			$count = count( (array) ( $data['styles'] ?? [] ) );
 			printf(
-				'<li><label><input type="checkbox" name="sheaf_sets[]" value="%1$s"%2$s> %3$s</label><span class="description">%4$s</span></li>',
+				'<li><label><input type="checkbox" value="%1$s"%2$s> %3$s</label><span class="description">%4$s</span></li>',
 				esc_attr( (string) $set ),
 				checked( in_array( (string) $set, $active, true ), true, false ),
 				esc_html( $label ),
@@ -399,45 +411,31 @@ final class Books_Admin {
 			);
 		}
 		echo '</ul>';
-
-		submit_button( __( 'Save style sets', 'sheaf' ) );
-		echo '</form>';
+		echo '<p id="sheaf-style-set-status" class="description" aria-live="polite"></p>';
 	}
 
 	/**
-	 * Save a book's active style sets (post/redirect/get), keeping only sets that
-	 * still exist in the library.
+	 * Auto-save a book's active style sets (AJAX), keeping only sets that still
+	 * exist in the library.
 	 */
-	public static function save_book_sets(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to manage books.', 'sheaf' ) );
-		}
-		check_admin_referer( self::STYLE_NONCE );
+	public static function ajax_save_book_sets(): void {
+		check_ajax_referer( self::STYLE_NONCE, 'nonce' );
 
 		$book_id = isset( $_POST['book'] ) ? absint( $_POST['book'] ) : 0;
-		$chosen  = isset( $_POST['sheaf_sets'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['sheaf_sets'] ) ) : [];
-		$chosen  = array_values( array_intersect( $chosen, array_keys( Style_Sets::all() ) ) );
-
-		if ( $book_id ) {
-			if ( $chosen ) {
-				update_post_meta( $book_id, Style_Sets::BOOK_META, $chosen );
-			} else {
-				delete_post_meta( $book_id, Style_Sets::BOOK_META );
-			}
+		if ( ! $book_id || ! current_user_can( 'edit_post', $book_id ) ) {
+			wp_send_json_error( 'forbidden', 403 );
 		}
 
-		wp_safe_redirect(
-			add_query_arg(
-				[
-					'post_type' => Chapters::POST_TYPE,
-					'page'      => self::PAGE,
-					'book'      => $book_id,
-					'sheaf_msg' => 'sets-saved',
-				],
-				admin_url( 'edit.php' )
-			)
-		);
-		exit;
+		$chosen = isset( $_POST['sets'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['sets'] ) ) : [];
+		$chosen = array_values( array_intersect( $chosen, array_keys( Style_Sets::all() ) ) );
+
+		if ( $chosen ) {
+			update_post_meta( $book_id, Style_Sets::BOOK_META, $chosen );
+		} else {
+			delete_post_meta( $book_id, Style_Sets::BOOK_META );
+		}
+
+		wp_send_json_success( [ 'count' => count( $chosen ) ] );
 	}
 
 	/**
