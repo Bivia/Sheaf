@@ -24,9 +24,29 @@ final class Style_Sets_Admin {
 	private const NONCE      = 'sheaf_style_sets';
 	private const ACTION     = 'sheaf_style_sets';
 
-	/** Sample text for previews — enough words to show the font (and wrapping). */
-	private const SAMPLE_INLINE = 'The quick brown fox jumps over';
-	private const SAMPLE_BLOCK  = 'The quick brown fox jumps over the lazy dog, then pauses to watch the curious cat slip past.';
+	/** Evocative sentences (from the seed filler) for random preview text. */
+	private const FILLER = [
+		'The ash came down like snow that year, and no one spoke of it.',
+		'She kept the lamp trimmed low, because oil was dear and the nights were long.',
+		'Below the levee the water turned the colour of old iron and held its breath.',
+		'He counted the bells from the far tower and lost the count twice.',
+		'They had marched since the cold road forked, and the forking felt like a verdict.',
+		'A gull wheeled once over the harbour and did not come back.',
+		'In the workshop the brass mechanisms ticked out of time with one another.',
+		'Nobody had told the children that the gate would not open again.',
+		'The letters arrived weeks late, smelling of smoke and salt and other people.',
+		'Skyfire broke along the ridge and for a moment the whole valley was noon.',
+		'There is a kind of quiet that is only the held edge of a scream.',
+		'He set the last gear and the mechanism shivered, almost alive, almost forgiving.',
+		'The thaw uncovered what the winter had been polite enough to bury.',
+		'She wrote his name in the margin and then, carefully, crossed it out.',
+		'Floodlight swept the wall and found nothing, which was the worst answer.',
+		'They said the war would be short; they were right, in the way of grief.',
+		'Frost wrote its slow grammar across the glass before first light.',
+		'The map was wrong, and being wrong, it had killed three of them already.',
+		'In the hollow under the hill the old machines kept their patient appointments.',
+		'He learned the city by its smells, and the city, in turn, forgot him.',
+	];
 
 	/** Hook suffix of our screen, for asset scoping. */
 	private static string $hook = '';
@@ -187,12 +207,7 @@ final class Style_Sets_Admin {
 			$row    = ( $slug === $selected ) ? ' class="sheaf-set-current"' : '';
 
 			echo '<tr' . $row . '>'; // Class is a fixed literal.
-			printf(
-				'<td><strong><a href="%1$s">%2$s</a></strong> <code>%3$s</code></td>',
-				esc_url( self::url( [ 'set' => $slug ] ) . '#sheaf-set-detail' ),
-				esc_html( $label ),
-				esc_html( (string) $slug )
-			);
+			self::name_cell( (string) $slug, $label );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $counts['inline'] ) ) );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $counts['block'] ) ) );
 			echo '<td>' . self::available_in( (string) $slug ) . '</td>'; // Links built/escaped within.
@@ -200,6 +215,51 @@ final class Style_Sets_Admin {
 		}
 
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * The name cell for the list: the set name (linking to its detail), plus
+	 * Rename / Delete row actions. "Rename" reveals an inline form below the name.
+	 */
+	private static function name_cell( string $slug, string $label ): void {
+		$rename_id = 'sheaf-rename-' . $slug;
+
+		echo '<td>';
+		printf(
+			'<strong><a href="%1$s">%2$s</a></strong> <code>%3$s</code>',
+			esc_url( self::url( [ 'set' => $slug ] ) . '#sheaf-set-detail' ),
+			esc_html( $label ),
+			esc_html( $slug )
+		);
+
+		echo '<div class="row-actions">';
+		printf(
+			'<span class="rename"><button type="button" class="button-link sheaf-rename-toggle" aria-expanded="false" data-target="%1$s">%2$s</button> | </span>',
+			esc_attr( $rename_id ),
+			esc_html__( 'Rename', 'sheaf' )
+		);
+		echo '<span class="delete">';
+		self::open_form( 'display:inline', 'return confirm(\'' . esc_js( __( 'Delete this whole style set?', 'sheaf' ) ) . '\')' );
+		echo '<input type="hidden" name="op" value="delete_set">';
+		echo '<input type="hidden" name="set" value="' . esc_attr( $slug ) . '">';
+		echo '<button type="submit" class="button-link sheaf-link-danger">' . esc_html__( 'Delete', 'sheaf' ) . '</button>';
+		echo '</form>';
+		echo '</span>';
+		echo '</div>';
+
+		// Inline rename form, hidden until "Rename" is clicked.
+		printf( '<div class="sheaf-rename" id="%s" hidden>', esc_attr( $rename_id ) );
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '">';
+		wp_nonce_field( self::NONCE );
+		echo '<input type="hidden" name="op" value="save_set">';
+		echo '<input type="hidden" name="set" value="' . esc_attr( $slug ) . '">';
+		echo '<input type="text" name="label" value="' . esc_attr( $label ) . '" class="regular-text"> ';
+		submit_button( __( 'Save name', 'sheaf' ), 'secondary', '', false );
+		echo '<p class="description sheaf-rename-note">' . esc_html__( 'Renaming updates the name shown to authors everywhere this set is used. Existing posts keep their formatting.', 'sheaf' ) . '</p>';
+		echo '</form></div>';
+
+		echo '</td>';
 	}
 
 	/**
@@ -279,22 +339,10 @@ final class Style_Sets_Admin {
 		self::render_styles_table( $slug, $styles, 'inline', $edit_style );
 		self::render_styles_table( $slug, $styles, 'block', $edit_style );
 
-		// Rename / delete set.
-		echo '<p class="sheaf-set-actions">';
-		self::open_form( 'display:inline' );
-		echo '<input type="hidden" name="op" value="save_set">';
-		echo '<input type="hidden" name="set" value="' . esc_attr( $slug ) . '">';
-		echo '<input type="text" name="label" value="' . esc_attr( (string) ( $set['label'] ?? '' ) ) . '" class="regular-text"> ';
-		submit_button( __( 'Rename', 'sheaf' ), 'secondary', '', false );
-		echo '</form> ';
-		self::open_form( 'display:inline', 'return confirm(\'' . esc_js( __( 'Delete this whole style set?', 'sheaf' ) ) . '\')' );
-		echo '<input type="hidden" name="op" value="delete_set">';
-		echo '<input type="hidden" name="set" value="' . esc_attr( $slug ) . '">';
-		submit_button( __( 'Delete set', 'sheaf' ), 'delete', '', false );
-		echo '</form></p>';
-
-		// Add-a-style form (unless we're editing one in this set).
+		// Add-a-style form (unless we're editing one in this set). Rename/delete
+		// live in the list's row actions now.
 		if ( '' === $edit_style ) {
+			echo '<hr>';
 			echo '<h3>' . esc_html__( 'Add a style', 'sheaf' ) . '</h3>';
 			self::render_style_form( $slug );
 		}
@@ -377,11 +425,33 @@ final class Style_Sets_Admin {
 		if ( 'block' === ( $style['kind'] ?? 'inline' ) ) {
 			return '<div class="sheaf-prev">'
 				. '<p class="sheaf-prev-rep"></p>'
-				. '<p class="sheaf-prev-actual" style="' . esc_attr( $decl ) . '">' . esc_html( self::SAMPLE_BLOCK ) . '</p>'
+				. '<p class="sheaf-prev-actual" style="' . esc_attr( $decl ) . '">' . esc_html( self::filler( true ) ) . '</p>'
 				. '<p class="sheaf-prev-rep"></p>'
 				. '</div>';
 		}
-		return '<p class="sheaf-prev"><span style="' . esc_attr( $decl ) . '">' . esc_html( self::SAMPLE_INLINE ) . '</span></p>';
+		return '<p class="sheaf-prev"><span style="' . esc_attr( $decl ) . '">' . esc_html( self::filler( false ) ) . '</span></p>';
+	}
+
+	/**
+	 * Random preview text from the filler pool, regenerated each load: a sentence
+	 * (~10–15 words) for inline styles, a paragraph (~30–50 words) for block.
+	 */
+	private static function filler( bool $block ): string {
+		$pool = self::FILLER;
+		if ( ! $block ) {
+			return $pool[ array_rand( $pool ) ];
+		}
+		shuffle( $pool );
+		$out   = [];
+		$words = 0;
+		foreach ( $pool as $sentence ) {
+			$out[]  = $sentence;
+			$words += str_word_count( $sentence );
+			if ( $words >= 30 ) {
+				break;
+			}
+		}
+		return implode( ' ', $out );
 	}
 
 	/**
@@ -419,8 +489,10 @@ final class Style_Sets_Admin {
 
 		echo '</tbody></table>';
 
-		// Live preview target — filled and updated by admin-style-preview.js.
-		echo '<div class="sheaf-live-preview"><p class="description">' . esc_html__( 'Live preview', 'sheaf' ) . '</p><div class="sheaf-live-target"></div></div>';
+		// Live preview target — filled and updated by admin-style-preview.js. The
+		// sample text is generated here so it matches the server-rendered previews.
+		echo '<div class="sheaf-live-preview"><p class="description">' . esc_html__( 'Live preview', 'sheaf' ) . '</p>'
+			. '<div class="sheaf-live-target" data-inline="' . esc_attr( self::filler( false ) ) . '" data-block="' . esc_attr( self::filler( true ) ) . '"></div></div>';
 
 		submit_button( '' === $style_slug ? __( 'Add style', 'sheaf' ) : __( 'Save style', 'sheaf' ), 'primary', '', false );
 		if ( '' !== $style_slug ) {
@@ -478,8 +550,10 @@ final class Style_Sets_Admin {
 			.sheaf-prop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(14em,1fr));gap:.5em 1em}
 			.sheaf-prop{display:flex;flex-direction:column;font-size:12px}
 			.sheaf-prop input{width:100%}
-			.sheaf-set-actions{margin:1em 0}
-			.sheaf-set-current td{box-shadow:inset 4px 0 0 #2271b1}
+			.sheaf-rename{margin:.4em 0}
+			.sheaf-rename-note{margin:.4em 0 0}
+			.sheaf-link-danger{color:#b32d2e}
+			.sheaf-set-current td:first-of-type{box-shadow:inset 4px 0 0 #2271b1}
 			.sheaf-style-table{max-width:60em;margin-bottom:1.5em}
 			.sheaf-prev{max-width:40em;margin:0}
 			.sheaf-prev-actual{margin:0}

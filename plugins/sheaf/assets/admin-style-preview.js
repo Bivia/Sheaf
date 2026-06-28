@@ -1,11 +1,14 @@
 /**
- * Live preview for the Style Sets editor: as the author fills in the property
- * grid / raw CSS / kind, update an inline preview without a round-trip. Mirrors
- * the server-rendered preview (Style_Sets_Admin::preview): inline styles show a
- * <span> in a line of text; block styles show a <p> framed by blank paragraphs.
+ * Behaviors for the Style Sets screen (no build step):
  *
- * The declarations are applied to the author's own preview element only (never
- * stored from here); the saved value is sanitized server-side.
+ *  - Live preview: as the author fills in the property grid / raw CSS / kind,
+ *    update an inline preview without a round-trip. Mirrors the server preview
+ *    (Style_Sets_Admin::preview): inline styles show a <span> in a line of text;
+ *    block styles show a <p> framed by blank paragraphs. Sample text comes from
+ *    the target's data-inline / data-block attributes (server-generated). The
+ *    declarations are applied to the author's own preview element only (never
+ *    stored from here); the saved value is sanitized server-side.
+ *  - Rename toggle: "Rename" in a set's row actions reveals its inline form.
  */
 ( function () {
 	'use strict';
@@ -50,12 +53,12 @@
 				'<p class="sheaf-prev-actual"></p><p class="sheaf-prev-rep"></p></div>';
 			var p = target.querySelector( '.sheaf-prev-actual' );
 			p.setAttribute( 'style', decls );
-			p.textContent = SAMPLE_BLOCK;
+			p.textContent = target.getAttribute( 'data-block' ) || SAMPLE_BLOCK;
 		} else {
 			target.innerHTML = '<p class="sheaf-prev"><span></span></p>';
 			var span = target.querySelector( 'span' );
 			span.setAttribute( 'style', decls );
-			span.textContent = SAMPLE_INLINE;
+			span.textContent = target.getAttribute( 'data-inline' ) || SAMPLE_INLINE;
 		}
 	}
 
@@ -70,5 +73,27 @@
 			render( form );
 		} );
 		render( form );
+	} );
+
+	// "Rename" in a set's row actions toggles its inline rename form.
+	document.querySelectorAll( '.sheaf-rename-toggle' ).forEach( function ( button ) {
+		button.addEventListener( 'click', function () {
+			var box = document.getElementById( button.getAttribute( 'data-target' ) );
+			if ( ! box ) {
+				return;
+			}
+			var open = ! box.hasAttribute( 'hidden' );
+			if ( open ) {
+				box.setAttribute( 'hidden', '' );
+			} else {
+				box.removeAttribute( 'hidden' );
+				var field = box.querySelector( 'input[name="label"]' );
+				if ( field ) {
+					field.focus();
+					field.select();
+				}
+			}
+			button.setAttribute( 'aria-expanded', open ? 'false' : 'true' );
+		} );
 	} );
 } )();
