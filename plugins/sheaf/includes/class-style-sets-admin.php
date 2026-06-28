@@ -55,6 +55,7 @@ final class Style_Sets_Admin {
 		add_action( 'admin_menu', [ self::class, 'add_page' ] );
 		add_action( 'admin_post_' . self::ACTION, [ self::class, 'handle' ] );
 		add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue' ] );
+		add_action( 'wp_ajax_sheaf_bulk_assign', [ self::class, 'ajax_bulk_assign' ] );
 	}
 
 	public static function add_page(): void {
@@ -83,6 +84,60 @@ final class Style_Sets_Admin {
 			$ver,
 			true
 		);
+		wp_localize_script(
+			'sheaf-style-preview',
+			'SheafStyleSets',
+			[
+				'ajax'  => admin_url( 'admin-ajax.php' ),
+				'nonce' => wp_create_nonce( self::NONCE ),
+			]
+		);
+	}
+
+	/**
+	 * Bulk-assign a set across books: for every book, add or remove the set to
+	 * match the submitted checkbox state. Books not listed (e.g. pages without
+	 * chapters) are left untouched.
+	 */
+	public static function ajax_bulk_assign(): void {
+		check_ajax_referer( self::NONCE, 'nonce' );
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_send_json_error( 'forbidden', 403 );
+		}
+
+		$set = sanitize_key( wp_unslash( $_POST['set'] ?? '' ) );
+		if ( '' === $set || ! Style_Sets::get_set( $set ) ) {
+			wp_send_json_error( 'no-set', 400 );
+		}
+
+		$checked = isset( $_POST['books'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['books'] ) ) : [];
+		$checked = array_flip( $checked );
+
+		foreach ( Books::all_book_ids() as $bid ) {
+			$bid = (int) $bid;
+			if ( ! current_user_can( 'edit_post', $bid ) ) {
+				continue;
+			}
+			$sets = array_values( array_filter( (array) get_post_meta( $bid, Style_Sets::BOOK_META, true ) ) );
+			$has  = in_array( $set, $sets, true );
+			$want = isset( $checked[ $bid ] );
+
+			if ( $want && ! $has ) {
+				$sets[] = $set;
+			} elseif ( ! $want && $has ) {
+				$sets = array_values( array_diff( $sets, [ $set ] ) );
+			} else {
+				continue;
+			}
+
+			if ( $sets ) {
+				update_post_meta( $bid, Style_Sets::BOOK_META, $sets );
+			} else {
+				delete_post_meta( $bid, Style_Sets::BOOK_META );
+			}
+		}
+
+		wp_send_json_success( [ 'count' => count( Style_Sets::books_using( $set ) ) ] );
 	}
 
 	/** A URL back to this screen, with optional extra query args. */
@@ -218,6 +273,12 @@ final class Style_Sets_Admin {
 		echo '</td></tr>';
 
 		echo '</tbody></table>';
+
+		// One bulk-assign modal per set (opened from the "Available in" cell).
+		foreach ( $all as $slug => $set ) {
+			$label = '' !== (string) ( $set['label'] ?? '' ) ? (string) $set['label'] : (string) $slug;
+			self::render_bulk_dialog( (string) $slug, $label );
+		}
 	}
 
 	/**
@@ -271,25 +332,76 @@ final class Style_Sets_Admin {
 	 */
 	private static function available_in( string $slug ): string {
 		$books = Style_Sets::books_using( $slug );
-		if ( ! $books ) {
-			return '<span aria-hidden="true">—</span>';
-		}
-
 		$total = count( $books );
-		$shown = $total > 4 ? array_slice( $books, 0, 2 ) : $books;
-		$links = array_map( [ self::class, 'book_link' ], $shown );
-		$out   = implode( ', ', $links );
 
-		if ( $total > 4 ) {
-			$out .= ' ' . esc_html(
-				sprintf(
-					/* translators: %s: number of additional books. */
-					_n( '+ %s more', '+ %s more', $total - 2, 'sheaf' ),
-					number_format_i18n( $total - 2 )
-				)
+		if ( $total ) {
+			// Plain text, semicolon-separated (titles can contain commas).
+			$shown  = $total > 4 ? array_slice( $books, 0, 2 ) : $books;
+			$titles = array_map(
+				static function ( $id ) {
+					return esc_html( get_the_title( $id ) );
+				},
+				$shown
 			);
+			$out = implode( '; ', $titles );
+			if ( $total > 4 ) {
+				$out .= ' ' . esc_html(
+					sprintf(
+						/* translators: %s: number of additional books. */
+						_n( '+ %s more', '+ %s more', $total - 2, 'sheaf' ),
+						number_format_i18n( $total - 2 )
+					)
+				);
+			}
+		} else {
+			$out = '<span aria-hidden="true">—</span>';
 		}
+
+		$out .= '<div class="sheaf-bulk-row"><button type="button" class="button button-small sheaf-bulk-open" data-set="' . esc_attr( $slug ) . '">' . esc_html__( 'Bulk assign', 'sheaf' ) . '</button></div>';
 		return $out;
+	}
+
+	/**
+	 * A modal listing every book with a checkbox (checked where this set is
+	 * active), plus a check/uncheck-all toggle. Saved over AJAX (ajax_bulk_assign).
+	 */
+	private static function render_bulk_dialog( string $slug, string $label ): void {
+		$all_books = Books::all_book_ids();
+		$active    = Style_Sets::books_using( $slug );
+
+		printf( '<dialog class="sheaf-bulk-dialog" id="%s">', esc_attr( 'sheaf-bulk-' . $slug ) );
+		printf(
+			'<h2>%s</h2>',
+			esc_html(
+				sprintf(
+					/* translators: %s: style set name. */
+					__( 'Books using “%s”', 'sheaf' ),
+					$label
+				)
+			)
+		);
+
+		if ( ! $all_books ) {
+			echo '<p>' . esc_html__( 'No books yet — add a chapter to a Page to make it a book.', 'sheaf' ) . '</p>';
+		} else {
+			echo '<p><label><input type="checkbox" class="sheaf-bulk-all"> <strong>' . esc_html__( 'Check / uncheck all', 'sheaf' ) . '</strong></label></p>';
+			echo '<ul class="sheaf-bulk-list">';
+			foreach ( $all_books as $bid ) {
+				printf(
+					'<li><label><input type="checkbox" class="sheaf-bulk-book" value="%1$d"%2$s> %3$s</label></li>',
+					(int) $bid,
+					checked( in_array( (int) $bid, $active, true ), true, false ),
+					esc_html( get_the_title( $bid ) )
+				);
+			}
+			echo '</ul>';
+		}
+
+		echo '<p class="sheaf-bulk-actions">';
+		printf( '<button type="button" class="button button-primary sheaf-bulk-save" data-set="%s">%s</button> ', esc_attr( $slug ), esc_html__( 'Save', 'sheaf' ) );
+		printf( '<button type="button" class="button sheaf-bulk-cancel">%s</button>', esc_html__( 'Cancel', 'sheaf' ) );
+		echo '</p>';
+		echo '</dialog>';
 	}
 
 	/** A link to a book's Sheaf management screen (not the Page editor). */
@@ -548,6 +660,13 @@ final class Style_Sets_Admin {
 			.sheaf-rename-note{margin:.4em 0 0}
 			.sheaf-link-danger{color:#b32d2e}
 			.sheaf-set-current td:first-of-type{box-shadow:inset 4px 0 0 #2271b1}
+			.sheaf-bulk-dialog{max-width:32em;border:1px solid #c3c4c7;border-radius:4px;padding:1em 1.4em}
+			.sheaf-bulk-dialog h2{margin-top:0}
+			.sheaf-bulk-dialog::backdrop{background:rgba(0,0,0,.35)}
+			.sheaf-bulk-list{max-height:50vh;overflow:auto;margin:.4em 0;border:1px solid #dcdcde;border-radius:3px;padding:.4em .8em}
+			.sheaf-bulk-list li{margin:.2em 0}
+			.sheaf-bulk-actions{margin:1em 0 0}
+			.sheaf-bulk-row{margin-top:.5em}
 			.sheaf-style-table{max-width:60em;margin-bottom:1.5em}
 			.sheaf-prev{max-width:40em;margin:0}
 			.sheaf-prev-actual{margin:0}

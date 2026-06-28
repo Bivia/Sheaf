@@ -75,6 +75,78 @@
 		render( form );
 	} );
 
+	// Bulk-assign modal: open it, wire the check/uncheck-all box, and save the
+	// book checkboxes over AJAX (then reload to refresh the "Available in" cell).
+	var cfg = window.SheafStyleSets || {};
+
+	document.querySelectorAll( '.sheaf-bulk-open' ).forEach( function ( opener ) {
+		opener.addEventListener( 'click', function () {
+			var dialog = document.getElementById( 'sheaf-bulk-' + opener.getAttribute( 'data-set' ) );
+			if ( dialog && dialog.showModal ) {
+				dialog.showModal();
+			}
+		} );
+	} );
+
+	document.querySelectorAll( '.sheaf-bulk-dialog' ).forEach( function ( dialog ) {
+		var all = dialog.querySelector( '.sheaf-bulk-all' );
+		if ( all ) {
+			all.addEventListener( 'change', function () {
+				dialog.querySelectorAll( '.sheaf-bulk-book' ).forEach( function ( box ) {
+					box.checked = all.checked;
+				} );
+			} );
+		}
+
+		// Cancelling (or pressing Escape) discards unsaved toggles: restore every
+		// checkbox to its server-rendered initial state.
+		dialog.addEventListener( 'close', function () {
+			dialog.querySelectorAll( '.sheaf-bulk-book, .sheaf-bulk-all' ).forEach( function ( box ) {
+				box.checked = box.defaultChecked;
+			} );
+		} );
+
+		var cancel = dialog.querySelector( '.sheaf-bulk-cancel' );
+		if ( cancel ) {
+			cancel.addEventListener( 'click', function () {
+				dialog.close();
+			} );
+		}
+
+		var save = dialog.querySelector( '.sheaf-bulk-save' );
+		if ( save ) {
+			save.addEventListener( 'click', function () {
+				var body = new URLSearchParams();
+				body.append( 'action', 'sheaf_bulk_assign' );
+				body.append( 'nonce', cfg.nonce || '' );
+				body.append( 'set', save.getAttribute( 'data-set' ) );
+				dialog.querySelectorAll( '.sheaf-bulk-book:checked' ).forEach( function ( box ) {
+					body.append( 'books[]', box.value );
+				} );
+				save.disabled = true;
+				fetch( cfg.ajax, {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: body.toString(),
+				} )
+					.then( function ( response ) {
+						return response.json();
+					} )
+					.then( function ( result ) {
+						if ( result && result.success ) {
+							window.location.reload();
+						} else {
+							save.disabled = false;
+						}
+					} )
+					.catch( function () {
+						save.disabled = false;
+					} );
+			} );
+		}
+	} );
+
 	// "Rename" in a set's row actions toggles its inline rename form.
 	document.querySelectorAll( '.sheaf-rename-toggle' ).forEach( function ( button ) {
 		button.addEventListener( 'click', function () {
