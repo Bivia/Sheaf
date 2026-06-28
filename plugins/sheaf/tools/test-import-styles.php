@@ -250,6 +250,70 @@ try {
 	$check( '' !== ( $out_c2['settings']['block_style_map']['Bar'] ?? '' ), 'C2 maps the paragraph style' );
 
 	wp_delete_post( $book2, true );
+
+	/* ---- direct: read_direct_choices + C3/C2 creation --------------------- */
+
+	$direct_entries = [
+		[
+			'error'  => '',
+			'blocks' => [
+				[ 'type' => 'paragraph', 'style' => '', 'runs' => [ [ 'text' => 'mono', 'style' => '', 'direct' => [ 'font-family' => 'Courier New', 'font-size' => '10pt' ] ] ] ],
+			],
+		],
+	];
+	$dsig = 'font-family:Courier New;font-size:10pt';
+	$did  = substr( md5( $dsig ), 0, 12 );
+	$dopts = [
+		'inline' => [ [ 'class' => 'sheaf-style-ok', 'label' => 'OK', 'set' => 'Dox', 'set_slug' => 'dox' ] ],
+		'block'  => [],
+		'sets'   => [ [ 'slug' => 'dox', 'label' => 'Dox' ] ],
+	];
+
+	$read_direct = $private( '\Sheaf\Import', 'read_direct_choices' );
+	$_POST['direct_map'] = [ $did => 'sheaf-style-ok' ];
+	$rd = $read_direct->invoke( null, $direct_entries, $dopts );
+	$check( 'sheaf-style-ok' === ( $rd['choices'][ $did ] ?? '' ), 'read_direct_choices keeps an existing class (by cluster id)' );
+	$check( 'sheaf-style-ok' === ( $rd['map'][ $dsig ] ?? '' ), 'read_direct_choices maps signature -> class' );
+	$_POST['direct_map'] = [ $did => 'new:dox' ];
+	$rd2 = $read_direct->invoke( null, $direct_entries, $dopts );
+	$check( 'new:dox' === ( $rd2['choices'][ $did ] ?? '' ), 'read_direct_choices keeps new:<set>' );
+	$check( ! isset( $rd2['map'][ $dsig ] ), 'read_direct_choices leaves new:<set> out of the preview map' );
+	unset( $_POST['direct_map'] );
+
+	// C3 direct: new:<set> creates an inline style carrying the cluster's props.
+	$book3 = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Direct C3', 'post_status' => 'publish' ] );
+	$dset  = \Sheaf\Style_Sets::save_set( 'Direct Set' );
+	update_post_meta( $book3, \Sheaf\Style_Sets::BOOK_META, [ $dset ] );
+	$out_d3 = $resolve->invoke(
+		null,
+		[
+			'book'     => $book3,
+			'entries'  => $direct_entries,
+			'settings' => [ 'keep_unnamed_styles' => true, 'direct_choices' => [ $did => 'new:' . $dset ], 'direct_style_map' => [] ],
+		]
+	);
+	$class_d3 = $out_d3['settings']['direct_style_map'][ $dsig ] ?? '';
+	$check( '' !== $class_d3, 'C3 direct creates a style and maps the signature' );
+	$sd3 = \Sheaf\Style_Sets::get_set( $dset );
+	$check( isset( $sd3['styles']['courier-new-10pt'] ), 'C3 direct names the style by its formatting' );
+	$check( 'Courier New' === ( $sd3['styles']['courier-new-10pt']['props']['font-family'] ?? '' ), 'C3 direct style carries the props' );
+	wp_delete_post( $book3, true );
+
+	// C2 direct: a new set built from found styles includes the direct cluster.
+	$book4  = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Direct C2', 'post_status' => 'publish' ] );
+	$out_d2 = $resolve->invoke(
+		null,
+		[
+			'book'     => $book4,
+			'entries'  => $direct_entries,
+			'settings' => [ 'keep_named_styles' => true, 'keep_unnamed_styles' => true, 'new_set' => 'Direct Bundle', 'direct_style_map' => [] ],
+		]
+	);
+	$check( '' !== ( $out_d2['settings']['direct_style_map'][ $dsig ] ?? '' ), 'C2 maps the direct cluster' );
+	$active4 = \Sheaf\Style_Sets::active_sets( $book4 );
+	$sd4     = \Sheaf\Style_Sets::get_set( $active4[0] ?? '' );
+	$check( $sd4 && isset( $sd4['styles']['courier-new-10pt'] ), 'C2 set includes the direct style' );
+	wp_delete_post( $book4, true );
 } finally {
 	$_POST = $post_backup;
 	update_option( \Sheaf\Style_Sets::OPTION, $snapshot );

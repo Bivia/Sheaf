@@ -294,7 +294,7 @@ final class Import {
 	 *
 	 * @return array<string,mixed>
 	 */
-	private static function settings_from_request( int $book ): array {
+	private static function settings_from_request( int $book, array $entries = [] ): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
 		$raw = isset( $_POST['settings'] ) && is_array( $_POST['settings'] )
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -311,10 +311,67 @@ final class Import {
 		$settings['style_map']       = self::existing_class_map( $settings['char_choices'] );
 		$settings['block_style_map'] = self::existing_class_map( $settings['para_choices'] );
 
+		// Direct (unnamed) formatting choices, keyed by cluster id; the existing-
+		// class ones resolve to a signature => class preview map.
+		$direct                      = self::read_direct_choices( $entries, $options );
+		$settings['direct_choices']  = $direct['choices'];
+		$settings['direct_style_map'] = $direct['map'];
+
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
 		$settings['new_set'] = isset( $_POST['new_set'] ) ? sanitize_text_field( wp_unslash( $_POST['new_set'] ) ) : '';
 
 		return $settings;
+	}
+
+	/**
+	 * Read the direct-formatting choices from the request, keyed by cluster id,
+	 * validated against the book's active styles. Returns both the raw choices
+	 * (to redisplay) and the existing-class map (signature => class) the
+	 * serializer applies now.
+	 *
+	 * @param array<int,array<string,mixed>> $entries
+	 * @param array<string,mixed>            $options style_options() output.
+	 * @return array{choices:array<string,string>,map:array<string,string>}
+	 */
+	private static function read_direct_choices( array $entries, array $options ): array {
+		$clusters = self::collect_direct( $entries );
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
+		$raw = isset( $_POST['direct_map'] ) && is_array( $_POST['direct_map'] )
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			? (array) wp_unslash( $_POST['direct_map'] )
+			: [];
+
+		$classes = [];
+		foreach ( (array) ( $options['inline'] ?? [] ) as $opt ) {
+			$classes[ $opt['class'] ] = true;
+		}
+		$sets = [];
+		foreach ( (array) ( $options['sets'] ?? [] ) as $set ) {
+			$sets[ $set['slug'] ] = true;
+		}
+
+		$choices = [];
+		$map     = [];
+		foreach ( $clusters as $id => $cluster ) {
+			$choice = (string) ( $raw[ $id ] ?? '' );
+			if ( 0 === strpos( $choice, 'new:' ) ) {
+				$set = sanitize_key( substr( $choice, 4 ) );
+				if ( isset( $sets[ $set ] ) ) {
+					$choices[ $id ] = 'new:' . $set;
+				}
+			} else {
+				$class = sanitize_html_class( $choice );
+				if ( '' !== $class && isset( $classes[ $class ] ) ) {
+					$choices[ $id ]                     = $class;
+					$map[ $cluster['signature'] ] = $class;
+				}
+			}
+		}
+		return [
+			'choices' => $choices,
+			'map'     => $map,
+		];
 	}
 
 	/**
@@ -810,37 +867,48 @@ final class Import {
 	 * @param array<string,mixed>            $settings
 	 */
 	private static function render_style_mapping( int $book, array $entries, array $settings ): void {
-		if ( empty( $settings['keep_named_styles'] ) ) {
-			return; // Named-style mapping is opt-in (the "Keep formatting" checkbox).
+		$want_named  = ! empty( $settings['keep_named_styles'] );
+		$want_direct = ! empty( $settings['keep_unnamed_styles'] );
+		if ( ! $want_named && ! $want_direct ) {
+			return; // Both mappings are opt-in (the "Keep formatting" checkboxes).
 		}
 
-		$detected = self::collect_styles( $entries );
-		if ( ! $detected['char'] && ! $detected['para'] ) {
-			return; // No named Word styles to map.
-		}
-
-		echo '<h2>' . esc_html__( 'Word styles', 'sheaf' ) . '</h2>';
-
-		$options = self::style_options( $book );
-
-		// No active sets: offer to create one from the found styles (C2).
-		if ( ! $options['sets'] ) {
-			self::render_create_set_from_found( $detected, $settings );
+		$detected = $want_named ? self::collect_styles( $entries ) : [ 'char' => [], 'para' => [] ];
+		$clusters = $want_direct ? self::collect_direct( $entries ) : [];
+		$has_named  = $detected['char'] || $detected['para'];
+		$has_direct = ! empty( $clusters );
+		if ( ! $has_named && ! $has_direct ) {
 			return;
 		}
 
-		echo '<p class="description">' . esc_html__( 'Map named Word styles found in these files to your style-set styles. You can add a found style to a set as a new style, map it to an existing one, or ignore it (imported as plain text).', 'sheaf' ) . '</p>';
+		$options = self::style_options( $book );
 
-		echo '<table class="wp-list-table widefat fixed striped"><thead><tr>';
-		echo '<th>' . esc_html__( 'Word style', 'sheaf' ) . '</th>';
-		echo '<th style="width:7em">' . esc_html__( 'Uses', 'sheaf' ) . '</th>';
-		echo '<th>' . esc_html__( 'Maps to', 'sheaf' ) . '</th>';
-		echo '</tr></thead><tbody>';
+		// No active sets: offer to create one from everything found (C2).
+		if ( ! $options['sets'] ) {
+			echo '<h2>' . esc_html__( 'Custom styles', 'sheaf' ) . '</h2>';
+			self::render_create_set_from_found( $detected, $clusters, $settings );
+			return;
+		}
 
-		self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options, 'inline', (array) ( $settings['char_choices'] ?? [] ) );
-		self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options, 'block', (array) ( $settings['para_choices'] ?? [] ) );
+		if ( $has_named ) {
+			echo '<h2>' . esc_html__( 'Word styles', 'sheaf' ) . '</h2>';
+			echo '<p class="description">' . esc_html__( 'Map named Word styles found in these files to your style-set styles. You can add a found style to a set as a new style, map it to an existing one, or ignore it (imported as plain text).', 'sheaf' ) . '</p>';
 
-		echo '</tbody></table>';
+			echo '<table class="wp-list-table widefat fixed striped"><thead><tr>';
+			echo '<th>' . esc_html__( 'Word style', 'sheaf' ) . '</th>';
+			echo '<th style="width:7em">' . esc_html__( 'Uses', 'sheaf' ) . '</th>';
+			echo '<th>' . esc_html__( 'Maps to', 'sheaf' ) . '</th>';
+			echo '</tr></thead><tbody>';
+
+			self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options, 'inline', (array) ( $settings['char_choices'] ?? [] ) );
+			self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options, 'block', (array) ( $settings['para_choices'] ?? [] ) );
+
+			echo '</tbody></table>';
+		}
+
+		if ( $has_direct ) {
+			self::render_direct_mapping( $clusters, $options, (array) ( $settings['direct_choices'] ?? [] ) );
+		}
 	}
 
 	/**
@@ -865,41 +933,129 @@ final class Import {
 			printf( '<td><code>%s</code></td>', esc_html( (string) $name ) );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $count ) ) );
 			echo '<td>';
-			printf( '<select name="%1$s[%2$s]">', esc_attr( $field ), esc_attr( (string) $name ) );
-			printf( '<option value=""%1$s>%2$s</option>', selected( $selected, '', false ), esc_html__( '— Ignore —', 'sheaf' ) );
+			self::style_select( $field . '[' . (string) $name . ']', $options, $kind, $selected, (string) $name );
+			echo '</td></tr>';
+		}
+	}
 
-			foreach ( $options['sets'] as $set ) {
-				// "Add as a new style" in this set.
-				$new_val = 'new:' . $set['slug'];
+	/**
+	 * A "Maps to" <select>: "— Ignore —", a new style in each set ("new:<slug>",
+	 * labelled with $new_label), and the existing styles of each set + kind.
+	 *
+	 * @param array<string,mixed> $options style_options() output.
+	 */
+	private static function style_select( string $name, array $options, string $kind, string $selected, string $new_label, string $class = '' ): void {
+		printf(
+			'<select%1$s%2$s>',
+			'' !== $name ? ' name="' . esc_attr( $name ) . '"' : '',
+			'' !== $class ? ' class="' . esc_attr( $class ) . '"' : ''
+		);
+		printf( '<option value=""%1$s>%2$s</option>', selected( $selected, '', false ), esc_html__( '— Ignore —', 'sheaf' ) );
+
+		foreach ( $options['sets'] as $set ) {
+			$new_val = 'new:' . $set['slug'];
+			printf(
+				'<option value="%1$s"%2$s>%3$s</option>',
+				esc_attr( $new_val ),
+				selected( $selected, $new_val, false ),
+				esc_html(
+					sprintf(
+						/* translators: 1: set name, 2: style label. */
+						__( '%1$s › %2$s [new style]', 'sheaf' ),
+						$set['label'],
+						$new_label
+					)
+				)
+			);
+			foreach ( $options[ $kind ] as $opt ) {
+				if ( ( $opt['set_slug'] ?? '' ) !== $set['slug'] ) {
+					continue;
+				}
 				printf(
 					'<option value="%1$s"%2$s>%3$s</option>',
-					esc_attr( $new_val ),
-					selected( $selected, $new_val, false ),
-					esc_html(
-						sprintf(
-							/* translators: 1: set name, 2: Word style name. */
-							__( '%1$s › %2$s [new style]', 'sheaf' ),
-							$set['label'],
-							(string) $name
-						)
-					)
+					esc_attr( $opt['class'] ),
+					selected( $selected, $opt['class'], false ),
+					esc_html( $set['label'] . ' › ' . $opt['label'] )
 				);
-				// Existing styles of this set and kind.
-				foreach ( $options[ $kind ] as $opt ) {
-					if ( ( $opt['set_slug'] ?? '' ) !== $set['slug'] ) {
-						continue;
-					}
-					printf(
-						'<option value="%1$s"%2$s>%3$s</option>',
-						esc_attr( $opt['class'] ),
-						selected( $selected, $opt['class'], false ),
-						esc_html( $set['label'] . ' › ' . $opt['label'] )
-					);
-				}
 			}
-
-			echo '</select></td></tr>';
 		}
+		echo '</select>';
+	}
+
+	/**
+	 * The "Unnamed styles" section: each direct-formatting cluster with a sample,
+	 * a description, occurrence count, and a "Maps to" select. A bulk control
+	 * applies one choice to all selected rows at once (client-side).
+	 *
+	 * @param array<string,array<string,mixed>> $clusters
+	 * @param array<string,mixed>               $options  style_options() output.
+	 * @param array<string,string>              $choices  cluster id => choice.
+	 */
+	private static function render_direct_mapping( array $clusters, array $options, array $choices ): void {
+		echo '<h2>' . esc_html__( 'Unnamed styles', 'sheaf' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Ad-hoc formatting found in these files (font, size or colour applied without a Word style). Map each to a style-set style, or ignore it. Use the bulk control to apply one choice to several at once.', 'sheaf' ) . '</p>';
+
+		echo '<p class="sheaf-direct-bulk">';
+		echo '<label><input type="checkbox" class="sheaf-direct-all"> ' . esc_html__( 'Select all', 'sheaf' ) . '</label> ';
+		self::style_select( '', $options, 'inline', '', __( 'selected styles', 'sheaf' ), 'sheaf-direct-bulk-select' );
+		echo ' <button type="button" class="button sheaf-direct-apply">' . esc_html__( 'Apply to selected', 'sheaf' ) . '</button>';
+		echo '</p>';
+
+		echo '<table class="wp-list-table widefat fixed striped"><thead><tr>';
+		echo '<th style="width:2em"></th>';
+		echo '<th>' . esc_html__( 'Sample', 'sheaf' ) . '</th>';
+		echo '<th>' . esc_html__( 'Formatting', 'sheaf' ) . '</th>';
+		echo '<th style="width:6em">' . esc_html__( 'Uses', 'sheaf' ) . '</th>';
+		echo '<th>' . esc_html__( 'Maps to', 'sheaf' ) . '</th>';
+		echo '</tr></thead><tbody>';
+
+		foreach ( $clusters as $id => $cluster ) {
+			$selected = (string) ( $choices[ $id ] ?? '' );
+			$decl     = Style_Sets::declarations( [ 'props' => $cluster['props'] ] );
+			echo '<tr>';
+			printf( '<td><input type="checkbox" class="sheaf-direct-cb" value="%s"></td>', esc_attr( $id ) );
+			printf( '<td><span style="%1$s">%2$s</span></td>', esc_attr( $decl ), esc_html( '' !== $cluster['sample'] ? $cluster['sample'] : '—' ) );
+			printf( '<td><code>%s</code></td>', esc_html( self::describe_direct( $cluster['props'] ) ) );
+			printf( '<td>%s</td>', esc_html( number_format_i18n( $cluster['count'] ) ) );
+			echo '<td>';
+			self::style_select( 'direct_map[' . $id . ']', $options, 'inline', $selected, self::describe_direct( $cluster['props'] ), 'sheaf-direct-select' );
+			echo '</td></tr>';
+		}
+
+		echo '</tbody></table>';
+		self::direct_bulk_script();
+	}
+
+	/**
+	 * Client-side bulk control for the Unnamed styles table: "select all" and
+	 * "apply to selected" (copy the bulk choice into each ticked row's select).
+	 */
+	private static function direct_bulk_script(): void {
+		?>
+		<script>
+		( function () {
+			var all = document.querySelector( '.sheaf-direct-all' );
+			var apply = document.querySelector( '.sheaf-direct-apply' );
+			var bulk = document.querySelector( '.sheaf-direct-bulk-select' );
+			function boxes() { return document.querySelectorAll( '.sheaf-direct-cb' ); }
+			if ( all ) {
+				all.addEventListener( 'change', function () {
+					boxes().forEach( function ( box ) { box.checked = all.checked; } );
+				} );
+			}
+			if ( apply && bulk ) {
+				apply.addEventListener( 'click', function () {
+					boxes().forEach( function ( box ) {
+						if ( ! box.checked ) { return; }
+						var row = box.closest( 'tr' );
+						var select = row ? row.querySelector( '.sheaf-direct-select' ) : null;
+						if ( select ) { select.value = bulk.value; }
+					} );
+				} );
+			}
+		} )();
+		</script>
+		<?php
 	}
 
 	/**
@@ -910,15 +1066,15 @@ final class Import {
 	 * @param array{char:array<string,int>,para:array<string,int>} $detected
 	 * @param array<string,mixed>                                  $settings
 	 */
-	private static function render_create_set_from_found( array $detected, array $settings ): void {
-		$total = count( $detected['char'] ) + count( $detected['para'] );
+	private static function render_create_set_from_found( array $detected, array $clusters, array $settings ): void {
+		$total = count( $detected['char'] ) + count( $detected['para'] ) + count( $clusters );
 
 		echo '<p class="description">' . esc_html(
 			sprintf(
-				/* translators: %s: number of named styles. */
+				/* translators: %s: number of custom styles. */
 				_n(
-					'%s named Word style was found, but this book has no style sets. Name a new set to create from it:',
-					'%s named Word styles were found, but this book has no style sets. Name a new set to create from them:',
+					'%s custom style was found, but this book has no style sets. Name a new set to create from it:',
+					'%s custom styles were found, but this book has no style sets. Name a new set to create from them:',
 					$total,
 					'sheaf'
 				),
@@ -939,6 +1095,9 @@ final class Import {
 		}
 		foreach ( array_keys( $detected['para'] ) as $word ) {
 			printf( '<li><code>%s</code> — %s</li>', esc_html( (string) $word ), esc_html__( 'paragraph style', 'sheaf' ) );
+		}
+		foreach ( $clusters as $cluster ) {
+			printf( '<li><code>%s</code> — %s</li>', esc_html( self::describe_direct( $cluster['props'] ) ), esc_html__( 'unnamed formatting', 'sheaf' ) );
 		}
 		echo '</ul>';
 		echo '<p class="description">' . esc_html__( 'Leave the name blank to import these as plain text.', 'sheaf' ) . '</p>';
@@ -962,7 +1121,7 @@ final class Import {
 		}
 
 		// Fold the submitted settings and edited titles back into the session.
-		$data['settings'] = self::settings_from_request( (int) $data['book'] );
+		$data['settings'] = self::settings_from_request( (int) $data['book'], (array) $data['entries'] );
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.
 		$titles = isset( $_POST['titles'] ) && is_array( $_POST['titles'] )
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -1026,28 +1185,37 @@ final class Import {
 	 * @return array<string,mixed>
 	 */
 	private static function resolve_style_choices( array $data ): array {
-		$settings = (array) $data['settings'];
-		if ( empty( $settings['keep_named_styles'] ) ) {
+		$settings    = (array) $data['settings'];
+		$want_named  = ! empty( $settings['keep_named_styles'] );
+		$want_direct = ! empty( $settings['keep_unnamed_styles'] );
+		if ( ! $want_named && ! $want_direct ) {
 			return $data;
 		}
 
-		$book      = (int) $data['book'];
-		$detected  = self::collect_styles( (array) $data['entries'] );
-		$style_map = (array) ( $settings['style_map'] ?? [] );
-		$block_map = (array) ( $settings['block_style_map'] ?? [] );
+		$book       = (int) $data['book'];
+		$detected   = $want_named ? self::collect_styles( (array) $data['entries'] ) : [ 'char' => [], 'para' => [] ];
+		$clusters   = $want_direct ? self::collect_direct( (array) $data['entries'] ) : [];
+		$style_map  = (array) ( $settings['style_map'] ?? [] );
+		$block_map  = (array) ( $settings['block_style_map'] ?? [] );
+		$direct_map = (array) ( $settings['direct_style_map'] ?? [] );
 
-		// C2: build a whole new set from the found styles (only when there are
-		// no sets to choose from in the first place).
+		// C2: build a whole new set from everything found (only when there are no
+		// sets to choose from in the first place).
 		$new_set_name = trim( (string) ( $settings['new_set'] ?? '' ) );
 		if ( '' !== $new_set_name && ! Style_Sets::active_sets( $book ) ) {
 			$set = Style_Sets::save_set( $new_set_name );
 			foreach ( array_keys( $detected['char'] ) as $word ) {
-				$style                  = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'inline' ] );
+				$style                       = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'inline' ] );
 				$style_map[ (string) $word ] = Style_Sets::style_class( $set, $style );
 			}
 			foreach ( array_keys( $detected['para'] ) as $word ) {
-				$style                  = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'block' ] );
+				$style                       = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'block' ] );
 				$block_map[ (string) $word ] = Style_Sets::css_class( $set, $style, 'block' );
+			}
+			foreach ( $clusters as $cluster ) {
+				// Direct clusters carry their actual props, so the new style works at once.
+				$style = Style_Sets::save_style( $set, [ 'label' => self::describe_direct( $cluster['props'] ), 'kind' => 'inline', 'props' => $cluster['props'] ] );
+				$direct_map[ $cluster['signature'] ] = Style_Sets::style_class( $set, $style );
 			}
 			if ( $book ) {
 				$active   = Style_Sets::active_sets( $book );
@@ -1057,13 +1225,44 @@ final class Import {
 		}
 
 		// C3: resolve "new:<set>" choices into freshly-created styles.
-		$style_map = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
-		$block_map = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
+		$style_map  = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
+		$block_map  = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
+		$direct_map = array_merge( $direct_map, self::create_new_direct( $clusters, (array) ( $settings['direct_choices'] ?? [] ), $book ) );
 
-		$settings['style_map']       = $style_map;
-		$settings['block_style_map'] = $block_map;
-		$data['settings']            = $settings;
+		$settings['style_map']        = $style_map;
+		$settings['block_style_map']  = $block_map;
+		$settings['direct_style_map'] = $direct_map;
+		$data['settings']             = $settings;
 		return $data;
+	}
+
+	/**
+	 * Create a style for every "new:<set>" direct-cluster choice, named by its
+	 * formatting and carrying its props, and return a signature => class map.
+	 *
+	 * @param array<string,array<string,mixed>> $clusters
+	 * @param array<string,string>              $choices  cluster id => choice.
+	 * @return array<string,string>
+	 */
+	private static function create_new_direct( array $clusters, array $choices, int $book ): array {
+		$active = Style_Sets::active_sets( $book );
+		$map    = [];
+		foreach ( $clusters as $id => $cluster ) {
+			$choice = (string) ( $choices[ $id ] ?? '' );
+			if ( 0 !== strpos( $choice, 'new:' ) ) {
+				continue;
+			}
+			$set = sanitize_key( substr( $choice, 4 ) );
+			if ( '' === $set || ! in_array( $set, $active, true ) ) {
+				continue;
+			}
+			$style = Style_Sets::save_style( $set, [ 'label' => self::describe_direct( $cluster['props'] ), 'kind' => 'inline', 'props' => $cluster['props'] ] );
+			if ( '' === $style ) {
+				continue;
+			}
+			$map[ $cluster['signature'] ] = Style_Sets::style_class( $set, $style );
+		}
+		return $map;
 	}
 
 	/**
