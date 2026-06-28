@@ -98,4 +98,36 @@ test.describe( 'Style sets — chapter editor', () => {
 		await select.selectOption( String( fx.book ) );
 		await expect( warning ).toHaveCount( 0 );
 	} );
+
+	test( 'applying an inline style from the Styles dropdown wraps the selection', async ( { page } ) => {
+		await openChapterEditor( page, fx.chapter );
+
+		const canvas = page.frameLocator( 'iframe[name="editor-canvas"]' );
+		const para = canvas.locator( '.block-editor-rich-text__editable' ).first();
+		await para.click();
+		await page.keyboard.type( 'magic words' );
+		await page.keyboard.press( 'Control+a' );
+
+		// Open the dedicated "Styles" dropdown and apply the inline style.
+		await page.getByRole( 'button', { name: 'Styles', exact: true } ).click();
+		await page.getByRole( 'menuitem', { name: 'E2E Computer Voice' } ).click();
+
+		// The serialized content now carries the style's class.
+		await expect
+			.poll( () => page.evaluate( () => wp.data.select( 'core/editor' ).getEditedPostContent() ) )
+			.toContain( fx.inlineClass );
+	} );
+
+	test( 'style-set CSS is injected into the editor canvas', async ( { page } ) => {
+		await openChapterEditor( page, fx.chapter );
+
+		// enqueue_block_assets adds the style CSS inside the canvas iframe, so an
+		// applied style is visible while editing (same-origin iframe).
+		const hasRule = await page.evaluate( ( cls ) => {
+			const iframe = document.querySelector( 'iframe[name="editor-canvas"]' );
+			const doc = iframe && iframe.contentDocument;
+			return !! doc && doc.documentElement.innerHTML.includes( '.' + cls );
+		}, fx.inlineClass );
+		expect( hasRule ).toBe( true );
+	} );
 } );
