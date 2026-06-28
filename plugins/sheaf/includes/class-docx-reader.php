@@ -21,7 +21,10 @@
  *     'items'   => run[][], // list: one run-array per item
  *   ]
  *   run = [ 'text'=>string, 'bold'=>bool, 'italic'=>bool, 'underline'=>bool,
- *           'href'=>string, 'style'=>string ]
+ *           'href'=>string, 'style'=>string, 'direct'=>array ]
+ *     'direct' holds ad-hoc character formatting (font/size/colour/highlight)
+ *     applied inline rather than via a named style — the basis for clustering
+ *     and mapping "unnamed" styles on import.
  *
  * @package Sheaf
  */
@@ -399,7 +402,51 @@ final class Docx_Reader {
 			'underline' => '' !== $this->attr( $xpath, $r, 'w:rPr/w:u/@w:val' ) && 'none' !== $this->attr( $xpath, $r, 'w:rPr/w:u/@w:val' ),
 			'href'      => '',
 			'style'     => $this->attr( $xpath, $r, 'w:rPr/w:rStyle/@w:val' ),
+			'direct'    => $this->parse_direct( $xpath, $r ),
 		];
+	}
+
+	/**
+	 * Direct (ad-hoc) character formatting on a run — font, size, colour and
+	 * highlight applied inline rather than through a named character style. These
+	 * are what a "unnamed styles" import clusters and maps. Bold/italic/underline
+	 * are left out: they are emphasis, handled separately.
+	 *
+	 * @return array<string,string> CSS-style props (empty when the run is plain).
+	 */
+	private function parse_direct( \DOMXPath $xpath, \DOMElement $r ): array {
+		$out = [];
+
+		$font = $this->attr( $xpath, $r, 'w:rPr/w:rFonts/@w:ascii' );
+		if ( '' === $font ) {
+			$font = $this->attr( $xpath, $r, 'w:rPr/w:rFonts/@w:hAnsi' );
+		}
+		if ( '' !== $font ) {
+			$out['font-family'] = $font;
+		}
+
+		$sz = $this->attr( $xpath, $r, 'w:rPr/w:sz/@w:val' );
+		if ( '' !== $sz && is_numeric( $sz ) ) {
+			// Word stores size in half-points.
+			$out['font-size'] = rtrim( rtrim( number_format( (float) $sz / 2, 1 ), '0' ), '.' ) . 'pt';
+		}
+
+		$color = $this->attr( $xpath, $r, 'w:rPr/w:color/@w:val' );
+		if ( '' !== $color && 'auto' !== $color && preg_match( '/^[0-9A-Fa-f]{6}$/', $color ) ) {
+			$out['color'] = '#' . strtolower( $color );
+		}
+
+		$highlight = $this->attr( $xpath, $r, 'w:rPr/w:highlight/@w:val' );
+		if ( '' !== $highlight && 'none' !== $highlight ) {
+			$out['background-color'] = $highlight; // A named colour (e.g. "yellow").
+		} else {
+			$shade = $this->attr( $xpath, $r, 'w:rPr/w:shd/@w:fill' );
+			if ( '' !== $shade && 'auto' !== $shade && preg_match( '/^[0-9A-Fa-f]{6}$/', $shade ) ) {
+				$out['background-color'] = '#' . strtolower( $shade );
+			}
+		}
+
+		return $out;
 	}
 
 	/**
