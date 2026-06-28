@@ -31,12 +31,31 @@ const DOCUMENT =
 	'<w:p><w:pPr><w:pStyle w:val="Verse"/></w:pPr><w:r><w:t>A whole verse paragraph here.</w:t></w:r></w:p>' +
 	'</w:body></w:document>';
 
-async function makeDocx() {
+// A document with direct (unnamed) character formatting — a run with a font,
+// size and colour applied inline, no named character style.
+const DIRECT_DOCUMENT =
+	'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+	'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+	'<w:p>' +
+	'<w:r><w:t xml:space="preserve">normal text and </w:t></w:r>' +
+	'<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/><w:color w:val="00B050"/></w:rPr><w:t>green code</w:t></w:r>' +
+	'</w:p>' +
+	'</w:body></w:document>';
+
+async function buildDocx( document ) {
 	const zip = new JSZip();
 	zip.file( '[Content_Types].xml', CONTENT_TYPES );
 	zip.file( '_rels/.rels', RELS );
-	zip.file( 'word/document.xml', DOCUMENT );
+	zip.file( 'word/document.xml', document );
 	return zip.generateAsync( { type: 'nodebuffer' } );
 }
 
-module.exports = { makeDocx };
+function makeDocx() {
+	return buildDocx( DOCUMENT );
+}
+
+function makeDirectDocx() {
+	return buildDocx( DIRECT_DOCUMENT );
+}
+
+module.exports = { makeDocx, makeDirectDocx };
