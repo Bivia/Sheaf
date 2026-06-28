@@ -20,6 +20,26 @@ final class Style_Sets_Editor {
 
 	public static function register(): void {
 		add_action( 'enqueue_block_editor_assets', [ self::class, 'enqueue' ] );
+		add_action( 'enqueue_block_assets', [ self::class, 'enqueue_canvas_css' ] );
+	}
+
+	/**
+	 * Put the style-set CSS inside the editor's content iframe so a style is
+	 * visible the moment it is applied, not only after saving. enqueue_block_assets
+	 * is the hook that reaches the iframe; the front end already gets this CSS via
+	 * Frontend::print_style_css(), so we only add it on the admin side here.
+	 */
+	public static function enqueue_canvas_css(): void {
+		if ( ! is_admin() ) {
+			return;
+		}
+		$css = Frontend::style_css();
+		if ( '' === $css ) {
+			return;
+		}
+		wp_register_style( 'sheaf-style-sets-editor', false ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- inline-only handle.
+		wp_enqueue_style( 'sheaf-style-sets-editor' );
+		wp_add_inline_style( 'sheaf-style-sets-editor', $css );
 	}
 
 	/**
