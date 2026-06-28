@@ -53,6 +53,9 @@
 		}
 		var notices = wp.data && wp.data.dispatch( 'core/notices' );
 		var NOTICE_ID = 'sheaf-style-book-changed';
+		// wp_localize_script serializes the id as a string; compare as a number
+		// so reverting the select back to the original book clears the warning.
+		var loadedBook = parseInt( data.bookId, 10 ) || 0;
 
 		function currentBook() {
 			var sel = box.querySelector( 'select[name="sheaf_book"]:not([disabled])' );
@@ -63,7 +66,7 @@
 			if ( ! notices ) {
 				return;
 			}
-			if ( currentBook() !== ( data.bookId || 0 ) ) {
+			if ( currentBook() !== loadedBook ) {
 				notices.createWarningNotice( data.i18n.bookChanged, {
 					id: NOTICE_ID,
 					isDismissible: true,
