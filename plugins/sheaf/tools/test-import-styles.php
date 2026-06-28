@@ -51,12 +51,20 @@ try {
 	];
 	$settings = \Sheaf\Import_Serializer::sanitize_settings(
 		[
-			'keep_emphasis' => true,
-			'style_map'     => [ 'ComputerVoice' => 'sheaf-style-talking-monsters-computer-voice' ],
+			'keep_emphasis'     => true,
+			'keep_named_styles' => true,
+			'style_map'         => [ 'ComputerVoice' => 'sheaf-style-talking-monsters-computer-voice' ],
 		]
 	);
 	$html = \Sheaf\Import_Serializer::to_blocks( $blocks, $settings );
 	$check( false !== strpos( $html, '<span class="sheaf-style-talking-monsters-computer-voice">BEEP</span>' ), 'character style -> inline span' );
+
+	// With named-style mapping OFF, the same map is ignored (opt-in gate).
+	$off = \Sheaf\Import_Serializer::sanitize_settings(
+		[ 'style_map' => [ 'ComputerVoice' => 'sheaf-style-talking-monsters-computer-voice' ] ]
+	);
+	$html_off = \Sheaf\Import_Serializer::to_blocks( $blocks, $off );
+	$check( false === strpos( $html_off, '<span class=' ), 'named-style mapping is gated off when unchecked' );
 
 	/* ---- Serializer: paragraph style -> block-style class ----------------- */
 
@@ -68,7 +76,10 @@ try {
 		],
 	];
 	$settings = \Sheaf\Import_Serializer::sanitize_settings(
-		[ 'block_style_map' => [ 'Verse' => 'is-style-sheaf-poetry-verse' ] ]
+		[
+			'keep_named_styles' => true,
+			'block_style_map'   => [ 'Verse' => 'is-style-sheaf-poetry-verse' ],
+		]
 	);
 	$html = \Sheaf\Import_Serializer::to_blocks( $blocks, $settings );
 	$check( false !== strpos( $html, '"className":"is-style-sheaf-poetry-verse"' ), 'paragraph style -> block className attr' );

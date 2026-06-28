@@ -36,6 +36,9 @@ final class Import_Serializer {
 			'keep_blockquote' => true,
 			'keep_links'      => true,
 			'scene_breaks'    => true,
+			// Whether to apply the named Word-style mappings below at all. When
+			// off, style_map / block_style_map are ignored (mapping is opt-in).
+			'keep_named_styles' => true,
 			// Word character-style name => CSS class for an inline <span>
 			// (an inline style-set style). Applied per run in render_runs().
 			'style_map'       => [],
@@ -150,8 +153,10 @@ final class Import_Serializer {
 					return '';
 				}
 				// A mapped Word paragraph style becomes a paragraph block-style
-				// class (e.g. "is-style-sheaf-…").
-				$class = (string) ( $settings['block_style_map'][ $block['style'] ?? '' ] ?? '' );
+				// class (e.g. "is-style-sheaf-…"), when named-style mapping is on.
+				$class = ! empty( $settings['keep_named_styles'] )
+					? (string) ( $settings['block_style_map'][ $block['style'] ?? '' ] ?? '' )
+					: '';
 				return self::wrap_paragraph( $inline, $class );
 		}
 	}
@@ -209,8 +214,9 @@ final class Import_Serializer {
 			// Preserve intentional line breaks inside a run as <br>.
 			$piece = implode( '<br>', array_map( 'esc_html', explode( "\n", $text ) ) );
 
-			// Reserved hook: a mapped Word character style becomes a semantic span.
-			$class = $settings['style_map'][ $run['style'] ] ?? '';
+			// A mapped Word character style becomes a semantic span, when
+			// named-style mapping is on.
+			$class = ! empty( $settings['keep_named_styles'] ) ? ( $settings['style_map'][ $run['style'] ] ?? '' ) : '';
 			if ( '' !== $class ) {
 				$piece = '<span class="' . esc_attr( $class ) . '">' . $piece . '</span>';
 			}

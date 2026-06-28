@@ -270,8 +270,9 @@ final class Import {
 			'keep_emphasis'   => __( 'Bold / italic / underline', 'sheaf' ),
 			'keep_lists'      => __( 'Lists', 'sheaf' ),
 			'keep_blockquote' => __( 'Block quotes', 'sheaf' ),
-			'keep_links'      => __( 'Links', 'sheaf' ),
-			'scene_breaks'    => __( 'Scene breaks (e.g. “* * *”) as separators', 'sheaf' ),
+			'keep_links'        => __( 'Links', 'sheaf' ),
+			'scene_breaks'      => __( 'Scene breaks (e.g. “* * *”) as separators', 'sheaf' ),
+			'keep_named_styles' => __( 'Named custom styles and formatting', 'sheaf' ),
 		];
 		echo '<fieldset>';
 		foreach ( $fields as $key => $label ) {
@@ -674,6 +675,10 @@ final class Import {
 	 * @param array<string,mixed>            $settings
 	 */
 	private static function render_style_mapping( int $book, array $entries, array $settings ): void {
+		if ( empty( $settings['keep_named_styles'] ) ) {
+			return; // Named-style mapping is opt-in (the "Keep formatting" checkbox).
+		}
+
 		$detected = self::collect_styles( $entries );
 		if ( ! $detected['char'] && ! $detected['para'] ) {
 			return; // No named Word styles to map.
