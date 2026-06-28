@@ -303,8 +303,7 @@ final class Books_Admin {
 			.sheaf-book-heading .wp-heading-inline{margin:0}
 			.sheaf-book-title{text-decoration:none;color:inherit}
 			.sheaf-book-title:hover,.sheaf-book-title:focus{color:#2271b1}
-			.sheaf-book-heading .row-actions{left:auto;visibility:hidden}
-			.sheaf-book-heading:hover .row-actions,.sheaf-book-heading:focus-within .row-actions{visibility:visible}
+			.sheaf-book-heading .row-actions{left:auto;visibility:visible}
 		</style>';
 
 		// "Back to the list" link, sitting above the title — muted and unstyled,
