@@ -39,12 +39,17 @@ final class Import_Serializer {
 			// Whether to apply the named Word-style mappings below at all. When
 			// off, style_map / block_style_map are ignored (mapping is opt-in).
 			'keep_named_styles' => true,
+			// Whether to apply the ad-hoc/unnamed (direct-formatting) mapping.
+			'keep_unnamed_styles' => true,
 			// Word character-style name => CSS class for an inline <span>
 			// (an inline style-set style). Applied per run in render_runs().
 			'style_map'       => [],
 			// Word paragraph-style name => CSS class for a paragraph block
 			// (a block style-set style). Applied per block in render_block().
 			'block_style_map' => [],
+			// Direct-formatting signature => CSS class for an inline <span>.
+			// Applied per run (see Import_Serializer::direct_signature()).
+			'direct_style_map' => [],
 		];
 	}
 
@@ -58,7 +63,7 @@ final class Import_Serializer {
 		$defaults = self::default_settings();
 		$out      = [];
 		foreach ( $defaults as $key => $default ) {
-			if ( 'style_map' === $key || 'block_style_map' === $key ) {
+			if ( 'style_map' === $key || 'block_style_map' === $key || 'direct_style_map' === $key ) {
 				$out[ $key ] = is_array( $raw[ $key ] ?? null ) ? array_map( 'sanitize_html_class', $raw[ $key ] ) : [];
 				continue;
 			}
@@ -197,6 +202,24 @@ final class Import_Serializer {
 	}
 
 	/**
+	 * A stable, canonical signature for a run's direct (unnamed) formatting, so
+	 * runs with the same ad-hoc font/size/colour cluster together. Empty for a
+	 * plain run.
+	 *
+	 * @param array<string,string> $direct
+	 */
+	public static function direct_signature( array $direct ): string {
+		ksort( $direct );
+		$parts = [];
+		foreach ( $direct as $prop => $value ) {
+			if ( '' !== (string) $value ) {
+				$parts[] = $prop . ':' . $value;
+			}
+		}
+		return implode( ';', $parts );
+	}
+
+	/**
 	 * Render a set of runs to safe inline HTML, applying emphasis/links/spans
 	 * per the settings. Adjacent runs are emitted independently; the editor
 	 * tidies redundant tags on first edit.
@@ -214,9 +237,16 @@ final class Import_Serializer {
 			// Preserve intentional line breaks inside a run as <br>.
 			$piece = implode( '<br>', array_map( 'esc_html', explode( "\n", $text ) ) );
 
-			// A mapped Word character style becomes a semantic span, when
-			// named-style mapping is on.
+			// A mapped Word character style becomes a semantic span (named-style
+			// mapping). Failing that, a mapped direct-formatting signature does
+			// (unnamed/ad-hoc mapping). Named takes precedence.
 			$class = ! empty( $settings['keep_named_styles'] ) ? ( $settings['style_map'][ $run['style'] ] ?? '' ) : '';
+			if ( '' === $class && ! empty( $settings['keep_unnamed_styles'] ) ) {
+				$signature = self::direct_signature( (array) ( $run['direct'] ?? [] ) );
+				if ( '' !== $signature ) {
+					$class = (string) ( $settings['direct_style_map'][ $signature ] ?? '' );
+				}
+			}
 			if ( '' !== $class ) {
 				$piece = '<span class="' . esc_attr( $class ) . '">' . $piece . '</span>';
 			}

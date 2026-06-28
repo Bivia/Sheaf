@@ -66,6 +66,35 @@ try {
 	$html_off = \Sheaf\Import_Serializer::to_blocks( $blocks, $off );
 	$check( false === strpos( $html_off, '<span class=' ), 'named-style mapping is gated off when unchecked' );
 
+	/* ---- Serializer: direct (unnamed) formatting -> inline span ----------- */
+
+	$sig = \Sheaf\Import_Serializer::direct_signature( [ 'font-size' => '10pt', 'font-family' => 'Courier New' ] );
+	$check( 'font-family:Courier New;font-size:10pt' === $sig, 'direct_signature is canonical (key-sorted)' );
+
+	$dblocks = [
+		[
+			'type'  => 'paragraph',
+			'style' => '',
+			'runs'  => [
+				[ 'text' => 'plain ', 'style' => '', 'direct' => [] ],
+				[ 'text' => 'mono', 'style' => '', 'direct' => [ 'font-family' => 'Courier New', 'font-size' => '10pt' ] ],
+			],
+		],
+	];
+	$don = \Sheaf\Import_Serializer::sanitize_settings(
+		[
+			'keep_unnamed_styles' => true,
+			'direct_style_map'    => [ $sig => 'sheaf-style-codey-mono' ],
+		]
+	);
+	$html_d = \Sheaf\Import_Serializer::to_blocks( $dblocks, $don );
+	$check( false !== strpos( $html_d, '<span class="sheaf-style-codey-mono">mono</span>' ), 'direct formatting -> mapped inline span' );
+
+	// Gated off when the unnamed toggle is unchecked.
+	$doff = \Sheaf\Import_Serializer::sanitize_settings( [ 'direct_style_map' => [ $sig => 'sheaf-style-codey-mono' ] ] );
+	$html_doff = \Sheaf\Import_Serializer::to_blocks( $dblocks, $doff );
+	$check( false === strpos( $html_doff, '<span class=' ), 'direct mapping gated off when unchecked' );
+
 	/* ---- Serializer: paragraph style -> block-style class ----------------- */
 
 	$blocks = [
