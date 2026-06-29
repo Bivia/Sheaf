@@ -749,8 +749,8 @@ final class Style_Sets_Admin {
 	private static function styles(): void {
 		echo '<style>
 			.sheaf-style-meta label{margin-right:1.6em}
-			.sheaf-style-layout{display:flex;gap:1.5em;align-items:flex-start;flex-wrap:wrap;margin:.6em 0 1em}
-			.sheaf-css-block{flex:1 1 28em;min-width:24em;font-family:Menlo,Consolas,monospace;font-size:13px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:.6em .9em}
+			.sheaf-style-layout{margin:.6em 0 1em}
+			.sheaf-css-block{max-width:60em;font-family:Menlo,Consolas,monospace;font-size:13px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:.6em .9em}
 			.sheaf-css-selector,.sheaf-css-close{color:#2271b1}
 			.sheaf-css-props{margin:.2em 0}
 			.sheaf-prop-row{display:flex;align-items:center;gap:.35em;margin:.15em 0 .15em 1.6em}
@@ -762,7 +762,7 @@ final class Style_Sets_Admin {
 			.sheaf-browse-fonts{font-size:12px;margin-left:.5em}
 			.sheaf-css-add{margin:.25em 0 .25em 1.6em}
 			.sheaf-css-raw{display:block;width:calc(100% - 1.6em);margin:.35em 0 .35em 1.6em;font-family:inherit}
-			.sheaf-style-preview{flex:1 1 18em;min-width:16em;position:sticky;top:2em;padding:.6em .8em;border:1px solid #dcdcde;border-radius:4px;background:#fff}
+			.sheaf-style-preview{max-width:60em;margin-top:1em;padding:.6em .8em;border:1px solid #dcdcde;border-radius:4px;background:#fff}
 			.sheaf-style-preview>.description{margin:0 0 .4em}
 			.sheaf-rename{margin:.4em 0}
 			.sheaf-rename-note{margin:.4em 0 0}
