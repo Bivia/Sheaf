@@ -312,10 +312,14 @@ final class Import {
 		$settings['block_style_map'] = self::existing_class_map( $settings['para_choices'] );
 
 		// Direct (unnamed) formatting choices, keyed by cluster id; the existing-
-		// class ones resolve to a signature => class preview map.
-		$direct                      = self::read_direct_choices( $entries, $options );
-		$settings['direct_choices']  = $direct['choices'];
-		$settings['direct_style_map'] = $direct['map'];
+		// class ones resolve to a signature => class preview map. Runs map to
+		// inline styles; whole paragraphs map to block styles.
+		$run_direct  = self::read_direct_choices( self::collect_direct( $entries ), $options, 'direct_map', 'inline' );
+		$para_direct = self::read_direct_choices( self::collect_direct_paragraphs( $entries ), $options, 'direct_para_map', 'block' );
+		$settings['direct_choices']      = $run_direct['choices'];
+		$settings['direct_style_map']    = $run_direct['map'];
+		$settings['direct_para_choices'] = $para_direct['choices'];
+		$settings['direct_block_map']    = $para_direct['map'];
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
 		$settings['new_set'] = isset( $_POST['new_set'] ) ? sanitize_text_field( wp_unslash( $_POST['new_set'] ) ) : '';
@@ -324,26 +328,27 @@ final class Import {
 	}
 
 	/**
-	 * Read the direct-formatting choices from the request, keyed by cluster id,
-	 * validated against the book's active styles. Returns both the raw choices
-	 * (to redisplay) and the existing-class map (signature => class) the
-	 * serializer applies now.
+	 * Read the direct-formatting choices for one cluster set from the request,
+	 * keyed by cluster id, validated against the book's active styles. Returns
+	 * both the raw choices (to redisplay) and the existing-class map (signature
+	 * => class) the serializer applies now. $kind selects which styles are valid
+	 * targets: 'inline' for run clusters, 'block' for paragraph clusters.
 	 *
-	 * @param array<int,array<string,mixed>> $entries
-	 * @param array<string,mixed>            $options style_options() output.
+	 * @param array<string,array<string,mixed>> $clusters collect_direct* output.
+	 * @param array<string,mixed>               $options  style_options() output.
+	 * @param string                            $field    POST field name.
+	 * @param string                            $kind     'inline' or 'block'.
 	 * @return array{choices:array<string,string>,map:array<string,string>}
 	 */
-	private static function read_direct_choices( array $entries, array $options ): array {
-		$clusters = self::collect_direct( $entries );
-
+	private static function read_direct_choices( array $clusters, array $options, string $field, string $kind ): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked by the caller.
-		$raw = isset( $_POST['direct_map'] ) && is_array( $_POST['direct_map'] )
+		$raw = isset( $_POST[ $field ] ) && is_array( $_POST[ $field ] )
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			? (array) wp_unslash( $_POST['direct_map'] )
+			? (array) wp_unslash( $_POST[ $field ] )
 			: [];
 
 		$classes = [];
-		foreach ( (array) ( $options['inline'] ?? [] ) as $opt ) {
+		foreach ( (array) ( $options[ $kind ] ?? [] ) as $opt ) {
 			$classes[ $opt['class'] ] = true;
 		}
 		$sets = [];
@@ -586,13 +591,84 @@ final class Import {
 	}
 
 	/**
+	 * Cluster ad-hoc/unnamed (direct) *paragraph* formatting across the parsed
+	 * entries — the block-level counterpart to collect_direct(). Plain paragraphs
+	 * (no named paragraph style) that carry direct alignment/indent/spacing are
+	 * grouped by signature; each cluster keeps a stable id, the props, a count and
+	 * a text sample. This is what an academic bibliography's hanging-indent layout
+	 * clusters into. Ordered by count.
+	 *
+	 * @param array<int,array<string,mixed>> $entries
+	 * @return array<string,array<string,mixed>> id => cluster
+	 */
+	private static function collect_direct_paragraphs( array $entries ): array {
+		$clusters = [];
+		foreach ( $entries as $entry ) {
+			if ( '' !== (string) ( $entry['error'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( (array) ( $entry['blocks'] ?? [] ) as $block ) {
+				// Only plain paragraphs — named styles are handled elsewhere, and
+				// headings/quotes are structural.
+				if ( 'paragraph' !== ( $block['type'] ?? '' ) || '' !== (string) ( $block['style'] ?? '' ) ) {
+					continue;
+				}
+				$direct = (array) ( $block['direct'] ?? [] );
+				if ( ! $direct ) {
+					continue;
+				}
+				$signature = Import_Serializer::direct_signature( $direct );
+				if ( '' === $signature ) {
+					continue;
+				}
+				$id = substr( md5( $signature ), 0, 12 );
+				if ( ! isset( $clusters[ $id ] ) ) {
+					$clusters[ $id ] = [
+						'id'        => $id,
+						'signature' => $signature,
+						'props'     => $direct,
+						'count'     => 0,
+						'sample'    => '',
+					];
+				}
+				++$clusters[ $id ]['count'];
+				$text = trim( Import_Serializer::to_text( [ $block ] ) );
+				if ( '' === $clusters[ $id ]['sample'] && '' !== $text ) {
+					$clusters[ $id ]['sample'] = mb_substr( $text, 0, 60 );
+				}
+			}
+		}
+
+		uasort(
+			$clusters,
+			static function ( $a, $b ) {
+				return $b['count'] <=> $a['count'];
+			}
+		);
+		return $clusters;
+	}
+
+	/**
 	 * A human-readable description of a direct-formatting cluster's props, used as
-	 * a label and as the name when the cluster becomes a new style.
+	 * a label and as the name when the cluster becomes a new style. Character
+	 * formatting (font/size/colour) reads as bare values ("Courier New, 10pt");
+	 * paragraph formatting (alignment/indent/spacing) gets a short label per
+	 * value ("align justify, left 36pt, indent -18pt"), since the values alone
+	 * would be cryptic.
 	 *
 	 * @param array<string,string> $props
 	 */
 	private static function describe_direct( array $props ): string {
-		$order = [ 'font-family', 'font-size', 'font-weight', 'font-style', 'color', 'background-color' ];
+		$order       = [ 'font-family', 'font-size', 'font-weight', 'font-style', 'color', 'background-color' ];
+		$para_labels = [
+			'text-align'    => __( 'align', 'sheaf' ),
+			'margin-left'   => __( 'left', 'sheaf' ),
+			'margin-right'  => __( 'right', 'sheaf' ),
+			'text-indent'   => __( 'indent', 'sheaf' ),
+			'margin-top'    => __( 'space above', 'sheaf' ),
+			'margin-bottom' => __( 'space below', 'sheaf' ),
+			'line-height'   => __( 'line height', 'sheaf' ),
+		];
 		$parts = [];
 		foreach ( $order as $key ) {
 			if ( ! empty( $props[ $key ] ) ) {
@@ -600,9 +676,10 @@ final class Import {
 			}
 		}
 		foreach ( $props as $key => $value ) {
-			if ( ! in_array( $key, $order, true ) && '' !== (string) $value ) {
-				$parts[] = (string) $value;
+			if ( in_array( $key, $order, true ) || '' === (string) $value ) {
+				continue;
 			}
+			$parts[] = isset( $para_labels[ $key ] ) ? $para_labels[ $key ] . ' ' . $value : (string) $value;
 		}
 		return $parts ? implode( ', ', $parts ) : __( 'Plain text', 'sheaf' );
 	}
@@ -873,10 +950,11 @@ final class Import {
 			return; // Both mappings are opt-in (the "Keep formatting" checkboxes).
 		}
 
-		$detected = $want_named ? self::collect_styles( $entries ) : [ 'char' => [], 'para' => [] ];
-		$clusters = $want_direct ? self::collect_direct( $entries ) : [];
+		$detected      = $want_named ? self::collect_styles( $entries ) : [ 'char' => [], 'para' => [] ];
+		$clusters      = $want_direct ? self::collect_direct( $entries ) : [];
+		$para_clusters = $want_direct ? self::collect_direct_paragraphs( $entries ) : [];
 		$has_named  = $detected['char'] || $detected['para'];
-		$has_direct = ! empty( $clusters );
+		$has_direct = ! empty( $clusters ) || ! empty( $para_clusters );
 		if ( ! $has_named && ! $has_direct ) {
 			return;
 		}
@@ -886,7 +964,7 @@ final class Import {
 		// No active sets: offer to create one from everything found (C2).
 		if ( ! $options['sets'] ) {
 			echo '<h2>' . esc_html__( 'Custom styles', 'sheaf' ) . '</h2>';
-			self::render_create_set_from_found( $detected, $clusters, $settings );
+			self::render_create_set_from_found( $detected, $clusters, $para_clusters, $settings );
 			return;
 		}
 
@@ -906,8 +984,30 @@ final class Import {
 			echo '</tbody></table>';
 		}
 
-		if ( $has_direct ) {
-			self::render_direct_mapping( $clusters, $options, (array) ( $settings['direct_choices'] ?? [] ) );
+		if ( $clusters ) {
+			self::render_direct_mapping(
+				$clusters,
+				$options,
+				(array) ( $settings['direct_choices'] ?? [] ),
+				'inline',
+				'direct_map',
+				'run',
+				__( 'Unnamed styles', 'sheaf' ),
+				__( 'Ad-hoc formatting found in these files (font, size or colour applied without a Word style). Map each to a style-set style, or ignore it. Use the bulk control to apply one choice to several at once.', 'sheaf' )
+			);
+		}
+
+		if ( $para_clusters ) {
+			self::render_direct_mapping(
+				$para_clusters,
+				$options,
+				(array) ( $settings['direct_para_choices'] ?? [] ),
+				'block',
+				'direct_para_map',
+				'para',
+				__( 'Unnamed paragraph styles', 'sheaf' ),
+				__( 'Whole-paragraph formatting found without a Word style (alignment, indentation or spacing — e.g. an academic bibliography’s hanging indent). Map each to a paragraph style-set style, or ignore it.', 'sheaf' )
+			);
 		}
 	}
 
@@ -983,21 +1083,32 @@ final class Import {
 	}
 
 	/**
-	 * The "Unnamed styles" section: each direct-formatting cluster with a sample,
-	 * a description, occurrence count, and a "Maps to" select. A bulk control
-	 * applies one choice to all selected rows at once (client-side).
+	 * An "Unnamed (paragraph) styles" section: each direct-formatting cluster with
+	 * a sample, a description, occurrence count, and a "Maps to" select. A bulk
+	 * control applies one choice to all selected rows at once (client-side). Used
+	 * for both run clusters (inline) and paragraph clusters (block); $slug scopes
+	 * the bulk control so the two tables don't drive each other.
 	 *
 	 * @param array<string,array<string,mixed>> $clusters
 	 * @param array<string,mixed>               $options  style_options() output.
 	 * @param array<string,string>              $choices  cluster id => choice.
+	 * @param string                            $kind     'inline' or 'block'.
+	 * @param string                            $field    POST field name.
+	 * @param string                            $slug     unique slug for scoping.
+	 * @param string                            $heading  section heading.
+	 * @param string                            $desc     section description.
 	 */
-	private static function render_direct_mapping( array $clusters, array $options, array $choices ): void {
-		echo '<h2>' . esc_html__( 'Unnamed styles', 'sheaf' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'Ad-hoc formatting found in these files (font, size or colour applied without a Word style). Map each to a style-set style, or ignore it. Use the bulk control to apply one choice to several at once.', 'sheaf' ) . '</p>';
+	private static function render_direct_mapping( array $clusters, array $options, array $choices, string $kind, string $field, string $slug, string $heading, string $desc ): void {
+		$wrap     = 'sheaf-direct-' . $slug;
+		$is_block = 'block' === $kind;
+
+		echo '<div class="sheaf-direct-section" id="' . esc_attr( $wrap ) . '">';
+		echo '<h2>' . esc_html( $heading ) . '</h2>';
+		echo '<p class="description">' . esc_html( $desc ) . '</p>';
 
 		echo '<p class="sheaf-direct-bulk">';
 		echo '<label><input type="checkbox" class="sheaf-direct-all"> ' . esc_html__( 'Select all', 'sheaf' ) . '</label> ';
-		self::style_select( '', $options, 'inline', '', __( 'selected styles', 'sheaf' ), 'sheaf-direct-bulk-select' );
+		self::style_select( '', $options, $kind, '', __( 'selected styles', 'sheaf' ), 'sheaf-direct-bulk-select' );
 		echo ' <button type="button" class="button sheaf-direct-apply">' . esc_html__( 'Apply to selected', 'sheaf' ) . '</button>';
 		echo '</p>';
 
@@ -1012,9 +1123,11 @@ final class Import {
 		foreach ( $clusters as $id => $cluster ) {
 			$selected = (string) ( $choices[ $id ] ?? '' );
 			$decl     = Style_Sets::declarations( [ 'props' => $cluster['props'] ] );
+			// A block sample needs a block element for alignment/indent to show.
+			$tag = $is_block ? 'div' : 'span';
 			echo '<tr>';
 			printf( '<td><input type="checkbox" class="sheaf-direct-cb" value="%s"></td>', esc_attr( $id ) );
-			printf( '<td><span style="%1$s">%2$s</span></td>', esc_attr( $decl ), esc_html( '' !== $cluster['sample'] ? $cluster['sample'] : '—' ) );
+			printf( '<td><%1$s style="%2$s">%3$s</%1$s></td>', $tag, esc_attr( $decl ), esc_html( '' !== $cluster['sample'] ? $cluster['sample'] : '—' ) );
 			$font = Fonts::primary_family( (string) ( $cluster['props']['font-family'] ?? '' ) );
 			$note = '';
 			if ( '' !== $font ) {
@@ -1034,26 +1147,30 @@ final class Import {
 			);
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $cluster['count'] ) ) );
 			echo '<td>';
-			self::style_select( 'direct_map[' . $id . ']', $options, 'inline', $selected, self::describe_direct( $cluster['props'] ), 'sheaf-direct-select' );
+			self::style_select( $field . '[' . $id . ']', $options, $kind, $selected, self::describe_direct( $cluster['props'] ), 'sheaf-direct-select' );
 			echo '</td></tr>';
 		}
 
 		echo '</tbody></table>';
-		self::direct_bulk_script();
+		echo '</div>';
+		self::direct_bulk_script( $wrap );
 	}
 
 	/**
-	 * Client-side bulk control for the Unnamed styles table: "select all" and
-	 * "apply to selected" (copy the bulk choice into each ticked row's select).
+	 * Client-side bulk control for an Unnamed-styles table: "select all" and
+	 * "apply to selected" (copy the bulk choice into each ticked row's select),
+	 * scoped to the section with id $wrap so multiple tables stay independent.
 	 */
-	private static function direct_bulk_script(): void {
+	private static function direct_bulk_script( string $wrap ): void {
 		?>
 		<script>
 		( function () {
-			var all = document.querySelector( '.sheaf-direct-all' );
-			var apply = document.querySelector( '.sheaf-direct-apply' );
-			var bulk = document.querySelector( '.sheaf-direct-bulk-select' );
-			function boxes() { return document.querySelectorAll( '.sheaf-direct-cb' ); }
+			var root = document.getElementById( <?php echo wp_json_encode( $wrap ); ?> );
+			if ( ! root ) { return; }
+			var all = root.querySelector( '.sheaf-direct-all' );
+			var apply = root.querySelector( '.sheaf-direct-apply' );
+			var bulk = root.querySelector( '.sheaf-direct-bulk-select' );
+			function boxes() { return root.querySelectorAll( '.sheaf-direct-cb' ); }
 			if ( all ) {
 				all.addEventListener( 'change', function () {
 					boxes().forEach( function ( box ) { box.checked = all.checked; } );
@@ -1080,10 +1197,12 @@ final class Import {
 	 * skips the styles (imported as plain text).
 	 *
 	 * @param array{char:array<string,int>,para:array<string,int>} $detected
+	 * @param array<string,array<string,mixed>>                    $clusters      run clusters.
+	 * @param array<string,array<string,mixed>>                    $para_clusters paragraph clusters.
 	 * @param array<string,mixed>                                  $settings
 	 */
-	private static function render_create_set_from_found( array $detected, array $clusters, array $settings ): void {
-		$total = count( $detected['char'] ) + count( $detected['para'] ) + count( $clusters );
+	private static function render_create_set_from_found( array $detected, array $clusters, array $para_clusters, array $settings ): void {
+		$total = count( $detected['char'] ) + count( $detected['para'] ) + count( $clusters ) + count( $para_clusters );
 
 		echo '<p class="description">' . esc_html(
 			sprintf(
@@ -1114,6 +1233,9 @@ final class Import {
 		}
 		foreach ( $clusters as $cluster ) {
 			printf( '<li><code>%s</code> — %s</li>', esc_html( self::describe_direct( $cluster['props'] ) ), esc_html__( 'unnamed formatting', 'sheaf' ) );
+		}
+		foreach ( $para_clusters as $cluster ) {
+			printf( '<li><code>%s</code> — %s</li>', esc_html( self::describe_direct( $cluster['props'] ) ), esc_html__( 'unnamed paragraph formatting', 'sheaf' ) );
 		}
 		echo '</ul>';
 		echo '<p class="description">' . esc_html__( 'Leave the name blank to import these as plain text.', 'sheaf' ) . '</p>';
@@ -1208,12 +1330,14 @@ final class Import {
 			return $data;
 		}
 
-		$book       = (int) $data['book'];
-		$detected   = $want_named ? self::collect_styles( (array) $data['entries'] ) : [ 'char' => [], 'para' => [] ];
-		$clusters   = $want_direct ? self::collect_direct( (array) $data['entries'] ) : [];
-		$style_map  = (array) ( $settings['style_map'] ?? [] );
-		$block_map  = (array) ( $settings['block_style_map'] ?? [] );
-		$direct_map = (array) ( $settings['direct_style_map'] ?? [] );
+		$book          = (int) $data['book'];
+		$detected      = $want_named ? self::collect_styles( (array) $data['entries'] ) : [ 'char' => [], 'para' => [] ];
+		$clusters      = $want_direct ? self::collect_direct( (array) $data['entries'] ) : [];
+		$para_clusters = $want_direct ? self::collect_direct_paragraphs( (array) $data['entries'] ) : [];
+		$style_map        = (array) ( $settings['style_map'] ?? [] );
+		$block_map        = (array) ( $settings['block_style_map'] ?? [] );
+		$direct_map       = (array) ( $settings['direct_style_map'] ?? [] );
+		$direct_block_map = (array) ( $settings['direct_block_map'] ?? [] );
 
 		// C2: build a whole new set from everything found (only when there are no
 		// sets to choose from in the first place).
@@ -1239,6 +1363,13 @@ final class Import {
 				$style                               = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => 'inline', 'props' => $props ] );
 				$direct_map[ $cluster['signature'] ] = Style_Sets::style_class( $set, $style );
 			}
+			foreach ( $para_clusters as $cluster ) {
+				// Paragraph clusters become block styles carrying their layout props
+				// (alignment/indent/spacing). No font substitution — they carry none.
+				$label                                     = self::describe_direct( $cluster['props'] );
+				$style                                     = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => 'block', 'props' => $cluster['props'] ] );
+				$direct_block_map[ $cluster['signature'] ] = Style_Sets::css_class( $set, $style, 'block' );
+			}
 			if ( $book ) {
 				$active   = Style_Sets::active_sets( $book );
 				$active[] = $set;
@@ -1247,13 +1378,15 @@ final class Import {
 		}
 
 		// C3: resolve "new:<set>" choices into freshly-created styles.
-		$style_map  = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
-		$block_map  = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
-		$direct_map = array_merge( $direct_map, self::create_new_direct( $clusters, (array) ( $settings['direct_choices'] ?? [] ), $book ) );
+		$style_map        = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
+		$block_map        = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
+		$direct_map       = array_merge( $direct_map, self::create_new_direct( $clusters, (array) ( $settings['direct_choices'] ?? [] ), $book, 'inline' ) );
+		$direct_block_map = array_merge( $direct_block_map, self::create_new_direct( $para_clusters, (array) ( $settings['direct_para_choices'] ?? [] ), $book, 'block' ) );
 
 		$settings['style_map']        = $style_map;
 		$settings['block_style_map']  = $block_map;
 		$settings['direct_style_map'] = $direct_map;
+		$settings['direct_block_map'] = $direct_block_map;
 		$data['settings']             = $settings;
 		return $data;
 	}
@@ -1261,12 +1394,14 @@ final class Import {
 	/**
 	 * Create a style for every "new:<set>" direct-cluster choice, named by its
 	 * formatting and carrying its props, and return a signature => class map.
+	 * $kind is 'inline' for run clusters or 'block' for paragraph clusters; the
+	 * font substitution is a no-op for paragraph clusters (they carry no font).
 	 *
 	 * @param array<string,array<string,mixed>> $clusters
 	 * @param array<string,string>              $choices  cluster id => choice.
 	 * @return array<string,string>
 	 */
-	private static function create_new_direct( array $clusters, array $choices, int $book ): array {
+	private static function create_new_direct( array $clusters, array $choices, int $book, string $kind = 'inline' ): array {
 		$active = Style_Sets::active_sets( $book );
 		$map    = [];
 		foreach ( $clusters as $id => $cluster ) {
@@ -1283,11 +1418,13 @@ final class Import {
 			if ( '' !== $embed ) {
 				Fonts::install_from_catalog( $embed );
 			}
-			$style = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => 'inline', 'props' => $props ] );
+			$style = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => $kind, 'props' => $props ] );
 			if ( '' === $style ) {
 				continue;
 			}
-			$map[ $cluster['signature'] ] = Style_Sets::style_class( $set, $style );
+			$map[ $cluster['signature'] ] = 'block' === $kind
+				? Style_Sets::css_class( $set, $style, 'block' )
+				: Style_Sets::style_class( $set, $style );
 		}
 		return $map;
 	}

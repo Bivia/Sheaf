@@ -309,13 +309,14 @@ try {
 		'sets'   => [ [ 'slug' => 'dox', 'label' => 'Dox' ] ],
 	];
 
+	$dclusters   = $collect_d->invoke( null, $direct_entries );
 	$read_direct = $private( '\Sheaf\Import', 'read_direct_choices' );
 	$_POST['direct_map'] = [ $did => 'sheaf-style-ok' ];
-	$rd = $read_direct->invoke( null, $direct_entries, $dopts );
+	$rd = $read_direct->invoke( null, $dclusters, $dopts, 'direct_map', 'inline' );
 	$check( 'sheaf-style-ok' === ( $rd['choices'][ $did ] ?? '' ), 'read_direct_choices keeps an existing class (by cluster id)' );
 	$check( 'sheaf-style-ok' === ( $rd['map'][ $dsig ] ?? '' ), 'read_direct_choices maps signature -> class' );
 	$_POST['direct_map'] = [ $did => 'new:dox' ];
-	$rd2 = $read_direct->invoke( null, $direct_entries, $dopts );
+	$rd2 = $read_direct->invoke( null, $dclusters, $dopts, 'direct_map', 'inline' );
 	$check( 'new:dox' === ( $rd2['choices'][ $did ] ?? '' ), 'read_direct_choices keeps new:<set>' );
 	$check( ! isset( $rd2['map'][ $dsig ] ), 'read_direct_choices leaves new:<set> out of the preview map' );
 	unset( $_POST['direct_map'] );
@@ -354,6 +355,84 @@ try {
 	$sd4     = \Sheaf\Style_Sets::get_set( $active4[0] ?? '' );
 	$check( $sd4 && isset( $sd4['styles']['courier-new-10pt'] ), 'C2 set includes the direct style' );
 	wp_delete_post( $book4, true );
+
+	/* ---- direct paragraphs: clustering + C3/C2 (block kind) --------------- */
+
+	$para_entries = [
+		[
+			'error'  => '',
+			'blocks' => [
+				[
+					'type'   => 'paragraph',
+					'style'  => '',
+					'direct' => [ 'text-align' => 'justify', 'margin-left' => '36pt', 'text-indent' => '-18pt' ],
+					'runs'   => [ [ 'text' => 'A bibliography entry.', 'style' => '', 'direct' => [] ] ],
+				],
+				// A named paragraph style is excluded from direct clustering.
+				[
+					'type'   => 'paragraph',
+					'style'  => 'Bibliography',
+					'direct' => [ 'text-align' => 'justify' ],
+					'runs'   => [ [ 'text' => 'named', 'style' => '', 'direct' => [] ] ],
+				],
+				// A plain paragraph with no direct formatting is excluded.
+				[ 'type' => 'paragraph', 'style' => '', 'direct' => [], 'runs' => [ [ 'text' => 'plain', 'style' => '', 'direct' => [] ] ] ],
+			],
+		],
+	];
+	$psig2 = \Sheaf\Import_Serializer::direct_signature( [ 'text-align' => 'justify', 'margin-left' => '36pt', 'text-indent' => '-18pt' ] );
+	$pid   = substr( md5( $psig2 ), 0, 12 );
+
+	$collect_p = $private( '\Sheaf\Import', 'collect_direct_paragraphs' );
+	$pclusters = $collect_p->invoke( null, $para_entries );
+	$check( 1 === count( $pclusters ), 'collect_direct_paragraphs groups one cluster (named + plain excluded)' );
+	$pcluster = reset( $pclusters );
+	$check( 1 === $pcluster['count'], 'paragraph cluster counts the one direct paragraph' );
+	$check( $psig2 === $pcluster['signature'], 'paragraph cluster signature is canonical' );
+	$check( 'A bibliography entry.' === $pcluster['sample'], 'paragraph cluster keeps a text sample' );
+
+	// C3 paragraph: new:<set> creates a BLOCK style carrying the layout props.
+	$bookp = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Para C3', 'post_status' => 'publish' ] );
+	$pset  = \Sheaf\Style_Sets::save_set( 'Para Set' );
+	update_post_meta( $bookp, \Sheaf\Style_Sets::BOOK_META, [ $pset ] );
+	$out_p3 = $resolve->invoke(
+		null,
+		[
+			'book'     => $bookp,
+			'entries'  => $para_entries,
+			'settings' => [ 'keep_unnamed_styles' => true, 'direct_para_choices' => [ $pid => 'new:' . $pset ], 'direct_block_map' => [] ],
+		]
+	);
+	$class_p3 = $out_p3['settings']['direct_block_map'][ $psig2 ] ?? '';
+	$check( '' !== $class_p3, 'C3 paragraph creates a style and maps the signature to direct_block_map' );
+	$check( 0 === strpos( $class_p3, 'is-style-' ), 'C3 paragraph style class is a block (is-style-) class' );
+	$sp3    = \Sheaf\Style_Sets::get_set( $pset );
+	$pstyle = is_array( $sp3['styles'] ?? null ) ? reset( $sp3['styles'] ) : [];
+	$check( 'block' === ( $pstyle['kind'] ?? '' ), 'C3 paragraph style is block kind' );
+	$check( 'justify' === ( $pstyle['props']['text-align'] ?? '' ) && '36pt' === ( $pstyle['props']['margin-left'] ?? '' ), 'C3 paragraph style carries the layout props' );
+	wp_delete_post( $bookp, true );
+
+	// C2 paragraph: a set built from found styles includes the cluster as a block style.
+	$bookp2 = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Para C2', 'post_status' => 'publish' ] );
+	$out_p2 = $resolve->invoke(
+		null,
+		[
+			'book'     => $bookp2,
+			'entries'  => $para_entries,
+			'settings' => [ 'keep_named_styles' => true, 'keep_unnamed_styles' => true, 'new_set' => 'Para Bundle', 'direct_block_map' => [] ],
+		]
+	);
+	$check( '' !== ( $out_p2['settings']['direct_block_map'][ $psig2 ] ?? '' ), 'C2 maps the paragraph cluster to direct_block_map' );
+	$activep   = \Sheaf\Style_Sets::active_sets( $bookp2 );
+	$spp       = \Sheaf\Style_Sets::get_set( $activep[0] ?? '' );
+	$has_block = false;
+	foreach ( (array) ( $spp['styles'] ?? [] ) as $st ) {
+		if ( 'block' === ( $st['kind'] ?? '' ) && 'justify' === ( $st['props']['text-align'] ?? '' ) ) {
+			$has_block = true;
+		}
+	}
+	$check( $has_block, 'C2 set includes the paragraph cluster as a block style with props' );
+	wp_delete_post( $bookp2, true );
 
 	/* ---- apply_font_substitution (Phase 3) -------------------------------- */
 
