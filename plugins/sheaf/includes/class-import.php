@@ -526,6 +526,46 @@ final class Import {
 	}
 
 	/**
+	 * Merge the named-style definitions (styleId => {name, type, props}) across all
+	 * parsed entries, so the import can give a created style its human label, font
+	 * and layout. Earlier entries win on conflict (definitions are normally
+	 * identical across a batch). Errored entries are skipped.
+	 *
+	 * @param array<int,array<string,mixed>> $entries
+	 * @return array<string,array<string,mixed>>
+	 */
+	private static function style_definitions( array $entries ): array {
+		$defs = [];
+		foreach ( $entries as $entry ) {
+			if ( '' !== (string) ( $entry['error'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( (array) ( $entry['styles'] ?? [] ) as $id => $def ) {
+				if ( is_array( $def ) && ! isset( $defs[ (string) $id ] ) ) {
+					$defs[ (string) $id ] = $def;
+				}
+			}
+		}
+		return $defs;
+	}
+
+	/**
+	 * Resolve a Word style's definition into a label, CSS props (with web-font
+	 * substitution applied) and the catalog family to embed — ready to create a
+	 * style-set style that carries the Word style's font and layout. Falls back to
+	 * the styleId as the label when the style has no human name.
+	 *
+	 * @param array<string,array<string,mixed>> $defs style_definitions() output.
+	 * @return array{0:string,1:array<string,string>,2:string} [ label, props, embed-family ]
+	 */
+	private static function style_from_definition( array $defs, string $word ): array {
+		$def   = (array) ( $defs[ $word ] ?? [] );
+		$label = '' !== (string) ( $def['name'] ?? '' ) ? (string) $def['name'] : $word;
+		list( $props, $embed ) = self::apply_font_substitution( (array) ( $def['props'] ?? [] ) );
+		return [ $label, $props, $embed ];
+	}
+
+	/**
 	 * Cluster ad-hoc/unnamed (direct) run formatting across the parsed entries.
 	 * Runs that carry direct formatting but no named character style are grouped
 	 * by their canonical signature; each cluster keeps a stable id, the props, an
@@ -766,6 +806,7 @@ final class Import {
 			'name'   => $name,
 			'title'  => self::title_from_filename( $name ),
 			'blocks' => [],
+			'styles' => [],
 			'images' => 0,
 			'tables' => 0,
 			'error'  => '',
@@ -788,6 +829,7 @@ final class Import {
 		}
 
 		$entry['blocks'] = $ir['blocks'];
+		$entry['styles'] = (array) ( $ir['styles'] ?? [] );
 		$entry['images'] = (int) $ir['images'];
 		$entry['tables'] = (int) $ir['tables'];
 		if ( '' !== trim( (string) $ir['title'] ) ) {
@@ -978,8 +1020,9 @@ final class Import {
 			echo '<th>' . esc_html__( 'Maps to', 'sheaf' ) . '</th>';
 			echo '</tr></thead><tbody>';
 
-			self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options, 'inline', (array) ( $settings['char_choices'] ?? [] ) );
-			self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options, 'block', (array) ( $settings['para_choices'] ?? [] ) );
+			$defs = self::style_definitions( $entries );
+			self::mapping_rows( __( 'Character styles', 'sheaf' ), $detected['char'], 'char_map', $options, 'inline', (array) ( $settings['char_choices'] ?? [] ), $defs );
+			self::mapping_rows( __( 'Paragraph styles', 'sheaf' ), $detected['para'], 'para_map', $options, 'block', (array) ( $settings['para_choices'] ?? [] ), $defs );
 
 			echo '</tbody></table>';
 		}
@@ -1016,11 +1059,12 @@ final class Import {
 	 * "— Ignore —", a new style in one of the book's sets ("new:<set>"), or an
 	 * existing style (its class), grouped by set.
 	 *
-	 * @param array<string,int>    $detected Word style name => uses.
-	 * @param array<string,mixed>  $options  style_options() output.
-	 * @param array<string,string> $choices  Word style name => current choice.
+	 * @param array<string,int>                 $detected Word styleId => uses.
+	 * @param array<string,mixed>               $options  style_options() output.
+	 * @param array<string,string>              $choices  Word styleId => current choice.
+	 * @param array<string,array<string,mixed>> $defs     style_definitions() output.
 	 */
-	private static function mapping_rows( string $heading, array $detected, string $field, array $options, string $kind, array $choices ): void {
+	private static function mapping_rows( string $heading, array $detected, string $field, array $options, string $kind, array $choices, array $defs = [] ): void {
 		if ( ! $detected ) {
 			return;
 		}
@@ -1028,12 +1072,15 @@ final class Import {
 
 		foreach ( $detected as $name => $count ) {
 			$selected = (string) ( $choices[ (string) $name ] ?? '' );
+			// Prefer the style's human name (w:name) over its styleId for display.
+			$def_name = (string) ( $defs[ (string) $name ]['name'] ?? '' );
+			$display  = '' !== $def_name ? $def_name : (string) $name;
 
 			echo '<tr>';
-			printf( '<td><code>%s</code></td>', esc_html( (string) $name ) );
+			printf( '<td><code>%s</code></td>', esc_html( $display ) );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $count ) ) );
 			echo '<td>';
-			self::style_select( $field . '[' . (string) $name . ']', $options, $kind, $selected, (string) $name );
+			self::style_select( $field . '[' . (string) $name . ']', $options, $kind, $selected, $display );
 			echo '</td></tr>';
 		}
 	}
@@ -1332,6 +1379,7 @@ final class Import {
 
 		$book          = (int) $data['book'];
 		$detected      = $want_named ? self::collect_styles( (array) $data['entries'] ) : [ 'char' => [], 'para' => [] ];
+		$defs          = $want_named ? self::style_definitions( (array) $data['entries'] ) : [];
 		$clusters      = $want_direct ? self::collect_direct( (array) $data['entries'] ) : [];
 		$para_clusters = $want_direct ? self::collect_direct_paragraphs( (array) $data['entries'] ) : [];
 		$style_map        = (array) ( $settings['style_map'] ?? [] );
@@ -1345,11 +1393,21 @@ final class Import {
 		if ( '' !== $new_set_name && ! Style_Sets::active_sets( $book ) ) {
 			$set = Style_Sets::save_set( $new_set_name );
 			foreach ( array_keys( $detected['char'] ) as $word ) {
-				$style                       = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'inline' ] );
+				// Carry the Word style's own font/size/colour and human label.
+				list( $label, $props, $embed ) = self::style_from_definition( $defs, (string) $word );
+				if ( '' !== $embed ) {
+					Fonts::install_from_catalog( $embed );
+				}
+				$style                       = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => 'inline', 'props' => $props ] );
 				$style_map[ (string) $word ] = Style_Sets::style_class( $set, $style );
 			}
 			foreach ( array_keys( $detected['para'] ) as $word ) {
-				$style                       = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => 'block' ] );
+				// Carry the Word style's layout (and any font) and human label.
+				list( $label, $props, $embed ) = self::style_from_definition( $defs, (string) $word );
+				if ( '' !== $embed ) {
+					Fonts::install_from_catalog( $embed );
+				}
+				$style                       = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => 'block', 'props' => $props ] );
 				$block_map[ (string) $word ] = Style_Sets::css_class( $set, $style, 'block' );
 			}
 			foreach ( $clusters as $cluster ) {
@@ -1378,8 +1436,8 @@ final class Import {
 		}
 
 		// C3: resolve "new:<set>" choices into freshly-created styles.
-		$style_map        = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book ) );
-		$block_map        = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book ) );
+		$style_map        = array_merge( $style_map, self::create_new_styles( (array) ( $settings['char_choices'] ?? [] ), 'inline', $book, $defs ) );
+		$block_map        = array_merge( $block_map, self::create_new_styles( (array) ( $settings['para_choices'] ?? [] ), 'block', $book, $defs ) );
 		$direct_map       = array_merge( $direct_map, self::create_new_direct( $clusters, (array) ( $settings['direct_choices'] ?? [] ), $book, 'inline' ) );
 		$direct_block_map = array_merge( $direct_block_map, self::create_new_direct( $para_clusters, (array) ( $settings['direct_para_choices'] ?? [] ), $book, 'block' ) );
 
@@ -1455,13 +1513,16 @@ final class Import {
 	}
 
 	/**
-	 * Create a style (named after the Word style) for every "new:<set>" choice,
-	 * returning a Word-style => class map. Only sets the book activates are used.
+	 * Create a style for every "new:<set>" choice, carrying the Word style's own
+	 * definition (human label, font/size/colour, and — for paragraph styles —
+	 * layout), with web-font substitution applied. Returns a Word-style => class
+	 * map. Only sets the book activates are used.
 	 *
-	 * @param array<string,string> $choices
+	 * @param array<string,string>              $choices
+	 * @param array<string,array<string,mixed>> $defs    style_definitions() output.
 	 * @return array<string,string>
 	 */
-	private static function create_new_styles( array $choices, string $kind, int $book ): array {
+	private static function create_new_styles( array $choices, string $kind, int $book, array $defs ): array {
 		$active = Style_Sets::active_sets( $book );
 		$map    = [];
 		foreach ( $choices as $word => $choice ) {
@@ -1472,7 +1533,11 @@ final class Import {
 			if ( '' === $set || ! in_array( $set, $active, true ) ) {
 				continue;
 			}
-			$style = Style_Sets::save_style( $set, [ 'label' => (string) $word, 'kind' => $kind ] );
+			list( $label, $props, $embed ) = self::style_from_definition( $defs, (string) $word );
+			if ( '' !== $embed ) {
+				Fonts::install_from_catalog( $embed );
+			}
+			$style = Style_Sets::save_style( $set, [ 'label' => $label, 'kind' => $kind, 'props' => $props ] );
 			if ( '' === $style ) {
 				continue;
 			}

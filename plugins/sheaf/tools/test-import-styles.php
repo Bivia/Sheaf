@@ -434,6 +434,80 @@ try {
 	$check( $has_block, 'C2 set includes the paragraph cluster as a block style with props' );
 	wp_delete_post( $bookp2, true );
 
+	/* ---- named-style definitions carry font + layout + human label ------- */
+
+	// style_from_definition: human name, font substitution, non-font props kept
+	// (pure — no install, so safe to assert the substituted font directly).
+	$sfd = $private( '\Sheaf\Import', 'style_from_definition' );
+	list( $lbl, $sprops, $semb ) = $sfd->invoke( null, [ 'BibId' => [ 'name' => 'Bibliography', 'props' => [ 'font-family' => 'Calibri', 'text-align' => 'justify' ] ] ], 'BibId' );
+	$check( 'Bibliography' === $lbl, 'style_from_definition uses the human name' );
+	$check( 'Carlito' === ( $sprops['font-family'] ?? '' ), 'style_from_definition substitutes the font (Calibri -> Carlito)' );
+	$check( 'justify' === ( $sprops['text-align'] ?? '' ), 'style_from_definition keeps non-font props' );
+	$check( 'Carlito' === $semb, 'style_from_definition reports the embed family' );
+	list( $lbl2 ) = $sfd->invoke( null, [], 'Unknown' );
+	$check( 'Unknown' === $lbl2, 'style_from_definition falls back to the styleId label' );
+
+	// Full resolve flow with web-safe fonts (Arial/Georgia: not substituted, not
+	// in the catalog) so no font is downloaded during the test.
+	$def_entries = [
+		[
+			'error'  => '',
+			'styles' => [
+				'ComputerVoice' => [ 'name' => 'Computer Voice', 'type' => 'character', 'props' => [ 'font-family' => 'Arial', 'color' => '#0070c0' ] ],
+				'Bibliography'  => [ 'name' => 'Bibliography', 'type' => 'paragraph', 'props' => [ 'text-align' => 'justify', 'margin-left' => '36pt', 'font-family' => 'Georgia' ] ],
+			],
+			'blocks' => [
+				[ 'type' => 'paragraph', 'style' => '', 'direct' => [], 'runs' => [ [ 'text' => 'x', 'style' => 'ComputerVoice', 'direct' => [] ] ] ],
+				[ 'type' => 'paragraph', 'style' => 'Bibliography', 'direct' => [], 'runs' => [ [ 'text' => 'y', 'style' => '', 'direct' => [] ] ] ],
+			],
+		],
+	];
+
+	$style_defs_m = $private( '\Sheaf\Import', 'style_definitions' );
+	$mdefs        = $style_defs_m->invoke( null, $def_entries );
+	$check( 'Computer Voice' === ( $mdefs['ComputerVoice']['name'] ?? '' ), 'style_definitions merges the definitions' );
+
+	// C2: a created set carries each named style's font/layout + human label.
+	$bookn = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Named Defs', 'post_status' => 'publish' ] );
+	$out_n = $resolve->invoke(
+		null,
+		[
+			'book'     => $bookn,
+			'entries'  => $def_entries,
+			'settings' => [ 'keep_named_styles' => true, 'new_set' => 'Named Bundle', 'style_map' => [], 'block_style_map' => [] ],
+		]
+	);
+	$activen = \Sheaf\Style_Sets::active_sets( $bookn );
+	$sn      = \Sheaf\Style_Sets::get_set( $activen[0] ?? '' );
+	$cv      = $sn['styles']['computer-voice'] ?? [];
+	$check( 'Computer Voice' === ( $cv['label'] ?? '' ), 'C2 named char style uses the human label' );
+	$check( 'inline' === ( $cv['kind'] ?? '' ), 'C2 named char style is inline' );
+	$check( 'Arial' === ( $cv['props']['font-family'] ?? '' ), 'C2 named char style carries its font' );
+	$check( '#0070c0' === ( $cv['props']['color'] ?? '' ), 'C2 named char style carries its colour' );
+	$bibn = $sn['styles']['bibliography'] ?? [];
+	$check( 'block' === ( $bibn['kind'] ?? '' ), 'C2 named paragraph style is block' );
+	$check( 'justify' === ( $bibn['props']['text-align'] ?? '' ), 'C2 named paragraph style carries its layout' );
+	$check( 'Georgia' === ( $bibn['props']['font-family'] ?? '' ), 'C2 named paragraph style carries its font' );
+	wp_delete_post( $bookn, true );
+
+	// C3: new:<set> for a named char style carries the definition too.
+	$bookn2 = (int) wp_insert_post( [ 'post_type' => 'page', 'post_title' => 'Named C3', 'post_status' => 'publish' ] );
+	$nset   = \Sheaf\Style_Sets::save_set( 'Named C3 Set' );
+	update_post_meta( $bookn2, \Sheaf\Style_Sets::BOOK_META, [ $nset ] );
+	$out_n3 = $resolve->invoke(
+		null,
+		[
+			'book'     => $bookn2,
+			'entries'  => $def_entries,
+			'settings' => [ 'keep_named_styles' => true, 'char_choices' => [ 'ComputerVoice' => 'new:' . $nset ], 'para_choices' => [], 'style_map' => [], 'block_style_map' => [] ],
+		]
+	);
+	$sn3 = \Sheaf\Style_Sets::get_set( $nset );
+	$cv3 = $sn3['styles']['computer-voice'] ?? [];
+	$check( 'Computer Voice' === ( $cv3['label'] ?? '' ), 'C3 named style uses the human label' );
+	$check( 'Arial' === ( $cv3['props']['font-family'] ?? '' ), 'C3 named style carries its font' );
+	wp_delete_post( $bookn2, true );
+
 	/* ---- apply_font_substitution (Phase 3) -------------------------------- */
 
 	$sub = $private( '\Sheaf\Import', 'apply_font_substitution' );
