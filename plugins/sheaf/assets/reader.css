@@ -1,0 +1,56 @@
+/**
+ * Full-book scrolling reader — structural styles.
+ *
+ * Layout-agnostic on purpose: chapters stay inside whatever column the theme
+ * gives the content, so they inherit its width and typography. Only the break
+ * spacers and the (optional) unloaded-chapter placeholders are sized here. The
+ * position sidebar / TOC skin is layered on in a later phase.
+ */
+
+/* While the reader is active, our own single-chapter prev/next is redundant. */
+.sheaf-scroll-active .sheaf-chapter-nav {
+	display: none;
+}
+
+.sheaf-slot {
+	position: relative;
+}
+
+/* An unloaded chapter holds its estimated height so the scrollbar stays put. */
+.sheaf-slot[data-loaded="0"] {
+	pointer-events: none;
+}
+
+.sheaf-chapter-title {
+	margin: 0 0 0.5em;
+}
+
+/* Break styles between chapters (and after sections). */
+.sheaf-break {
+	display: block;
+}
+
+.sheaf-break--none {
+	height: 1.5em;
+}
+
+.sheaf-break--blank-lines {
+	height: 4em;
+}
+
+/* A simulated page break: at least ~4 blank lines, up to half the viewport. */
+.sheaf-break--page-break,
+.sheaf-break--hr-page-break {
+	height: 50vh;
+	min-height: 6em;
+}
+
+.sheaf-break--hr {
+	margin: 1.5em 0;
+}
+
+/* Author divider markup sits at the top of the break; drop its leading margin. */
+.sheaf-break--hr > :first-child,
+.sheaf-break--hr-page-break > :first-child {
+	margin-top: 0;
+}
