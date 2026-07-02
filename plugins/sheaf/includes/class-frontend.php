@@ -369,6 +369,12 @@ final class Frontend {
 			return;
 		}
 
+		/** Filter: return false to suppress the bundled reader and build your own
+		 * from sheaf_scroll_spine() + the .sheaf-chapter fragments. */
+		if ( ! apply_filters( 'sheaf_scroll_reader', true, $book_id, $chapter_id ) ) {
+			return;
+		}
+
 		$css     = SHEAF_DIR . 'assets/reader.css';
 		$js      = SHEAF_DIR . 'assets/reader.js';
 		$css_ver = file_exists( $css ) ? (string) filemtime( $css ) : SHEAF_VERSION;
@@ -378,9 +384,30 @@ final class Frontend {
 		wp_enqueue_script( 'sheaf-reader', SHEAF_URL . 'assets/reader.js', [], $js_ver, true );
 		wp_add_inline_script(
 			'sheaf-reader',
-			'window.SheafScroll = ' . wp_json_encode( self::build_spine( $book_id, $chapter_id ) ) . ';',
+			'window.SheafScroll = ' . wp_json_encode( self::spine( $book_id, $chapter_id ) ) . ';',
 			'before'
 		);
+	}
+
+	/**
+	 * Public accessor for the full-book "spine" — the same data payload the
+	 * reader receives in window.SheafScroll. Template authors building their own
+	 * reader can call this (via sheaf_scroll_spine()) to bootstrap it. With no
+	 * arguments it resolves the current chapter and its book.
+	 *
+	 * @return array<string,mixed> Empty array if the chapter has no scroll book.
+	 */
+	public static function spine( int $book_id = 0, int $chapter_id = 0 ): array {
+		if ( ! $chapter_id ) {
+			$chapter_id = (int) get_queried_object_id();
+		}
+		if ( ! $book_id ) {
+			$book_id = Books::get_book_id( $chapter_id );
+		}
+		if ( ! $book_id ) {
+			return [];
+		}
+		return self::build_spine( $book_id, $chapter_id );
 	}
 
 	/**
@@ -412,7 +439,7 @@ final class Frontend {
 			];
 		}
 
-		return [
+		$spine = [
 			'bookId'     => $book_id,
 			'bookTitle'  => get_the_title( $book_id ),
 			'bookUrl'    => get_permalink( $book_id ),
@@ -428,9 +455,16 @@ final class Frontend {
 				'sectionBreakHtml'     => (string) $settings['section_break_html'],
 				'showPageNumbers'      => (bool) $settings['show_page_numbers'],
 				'showFullToc'          => (bool) $settings['show_full_toc'],
+				/** Filter: return false to keep the scroll engine but drop the
+				 * bundled position sidebar (build your own from this data). */
+				'sidebar'              => (bool) apply_filters( 'sheaf_scroll_sidebar', true, $book_id ),
 			],
 			'chapters'   => $chapters,
 		];
+
+		/** Filter: the full-book-scroll data payload emitted as window.SheafScroll
+		 * and returned by sheaf_scroll_spine(). */
+		return apply_filters( 'sheaf_scroll_spine', $spine, $book_id, $chapter_id );
 	}
 
 	/**

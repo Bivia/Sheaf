@@ -43,6 +43,7 @@ require_once SHEAF_DIR . 'includes/class-import-serializer.php';
 require_once SHEAF_DIR . 'includes/class-import.php';
 require_once SHEAF_DIR . 'includes/class-updater.php';
 require_once SHEAF_DIR . 'includes/class-plugin.php';
+require_once SHEAF_DIR . 'includes/template-tags.php';
 
 Plugin::instance()->boot();
 Updater::register();

@@ -32,8 +32,12 @@ Display (all opt-in except the chapter breadcrumb)
   `sheaf_auto_breadcrumbs`).
 
 == Roadmap ==
-* REST endpoints driving chapter-to-chapter infinite scroll.
 * Addressable text versions that comments can reference and link to.
+
+Full-book scrolling (arrive at any chapter, scroll through the whole book in
+place) has shipped as a per-book Display setting. Theme and custom-template
+authors: see docs/full-book-scrolling.md for the template tags, filters, data
+model, and CSS classes.
 
 == Changelog ==
 

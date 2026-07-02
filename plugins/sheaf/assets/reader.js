@@ -66,7 +66,9 @@
 	rebreadcrumb();
 	buildSlots();
 	observeSlots();
-	buildSidebar();
+	if ( false !== settings.sidebar ) {
+		buildSidebar(); // A theme can drop the default sidebar via sheaf_scroll_sidebar.
+	}
 	trackPosition();
 	onFrame();
 

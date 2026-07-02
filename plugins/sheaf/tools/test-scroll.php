@@ -146,6 +146,37 @@ try {
 	$check( 0 === $map['chapters'][ $c2 ]['pages'] && $map['chapters'][ $c2 ]['is_section'], 'map: section spans 0 pages' );
 	$check( 2 === $map['chapters'][ $c3 ]['start_page'], 'map: third chapter starts on page 2' );
 	$check( 2 === $map['chapters'][ $c3 ]['pages'], 'map: 600-word chapter spans 2 pages' );
+
+	/* ------------------------------------------------------- template tags -- */
+
+	$check( true === sheaf_is_scroll_reader( $c1 ), 'tag: is_scroll_reader true for enabled book chapter' );
+	$check( false === sheaf_is_scroll_reader( $book ), 'tag: is_scroll_reader false for a non-chapter' );
+	$check( $book === sheaf_scroll_book_id( $c1 ), 'tag: scroll_book_id resolves the book' );
+	$check( 0 === sheaf_scroll_book_id( $book ), 'tag: scroll_book_id 0 for a non-chapter' );
+	$check( 1 === sheaf_chapter_pages( $c1 ), 'tag: chapter_pages = 1 for 300 words' );
+	$check( 0 === sheaf_chapter_pages( $c2 ), 'tag: chapter_pages = 0 for a section' );
+	$check( 2 === sheaf_chapter_pages( $c3 ), 'tag: chapter_pages = 2 for 600 words' );
+	$check( 3 === sheaf_book_pages( $book ), 'tag: book_pages = 3' );
+	$check( 3 === ( sheaf_book_page_map( $book )['total_pages'] ?? 0 ), 'tag: book_page_map total_pages' );
+
+	$spine = sheaf_scroll_spine( $book, $c1 );
+	$check( $book === ( $spine['bookId'] ?? 0 ), 'tag: spine bookId' );
+	$check( $c1 === ( $spine['currentId'] ?? 0 ), 'tag: spine currentId' );
+	$check( 3 === count( $spine['chapters'] ?? [] ), 'tag: spine lists all chapters' );
+	$check( true === ( $spine['settings']['sidebar'] ?? null ), 'tag: spine sidebar defaults on' );
+	$check( [] === sheaf_scroll_spine(), 'tag: spine empty with no current chapter' );
+
+	/* ------------------------------------------------------------- filters -- */
+
+	$mark = static fn( $spine ) => array_merge( $spine, [ 'marked' => 'yes' ] );
+	add_filter( 'sheaf_scroll_spine', $mark );
+	$check( 'yes' === ( sheaf_scroll_spine( $book, $c1 )['marked'] ?? null ), 'filter: sheaf_scroll_spine applied' );
+	remove_filter( 'sheaf_scroll_spine', $mark );
+
+	$off = static fn() => false;
+	add_filter( 'sheaf_scroll_sidebar', $off );
+	$check( false === sheaf_scroll_spine( $book, $c1 )['settings']['sidebar'], 'filter: sheaf_scroll_sidebar off' );
+	remove_filter( 'sheaf_scroll_sidebar', $off );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );
