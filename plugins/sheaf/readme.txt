@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.1.0
+Stable tag: 0.7.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -32,10 +32,24 @@ Display (all opt-in except the chapter breadcrumb)
   `sheaf_auto_breadcrumbs`).
 
 == Roadmap ==
-* REST endpoints driving chapter-to-chapter infinite scroll.
 * Addressable text versions that comments can reference and link to.
 
+Full-book scrolling (arrive at any chapter, scroll through the whole book in
+place) has shipped as a per-book Display setting. Theme and custom-template
+authors: see docs/full-book-scrolling.md for the template tags, filters, data
+model, and CSS classes.
+
 == Changelog ==
+
+= 0.7.0 =
+* Full-book scrolling: arrive at any chapter and scroll through the whole book
+  in place, with a per-book Display setting for chapter titles, chapter/section
+  breaks, pseudo page numbers, and a floating table of contents.
+* Fragment delivery over the canonical chapter URL (so views still count),
+  bounded-memory load/unload, book-level heading/breadcrumbs, and a remembered
+  single-chapter opt-out.
+* Public template tags and filters plus docs/full-book-scrolling.md for themes
+  and custom templates.
 
 = 0.1.0 =
 * Initial scaffold: chapter CPT, book linkage + ordering, nested URLs,

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Sheaf
  * Description:       Publish novels as one chapter per post, organised into books and series built from ordinary Pages.
- * Version:           0.6.0
+ * Version:           0.7.0
  * Requires at least: 7.0
  * Requires PHP:      8.3
  * Author:            Bivia
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SHEAF_VERSION', '0.6.0' );
+define( 'SHEAF_VERSION', '0.7.0' );
 define( 'SHEAF_FILE', __FILE__ );
 define( 'SHEAF_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SHEAF_URL', plugin_dir_url( __FILE__ ) );
@@ -27,6 +27,8 @@ require_once SHEAF_DIR . 'includes/class-books.php';
 require_once SHEAF_DIR . 'includes/class-style-sets.php';
 require_once SHEAF_DIR . 'includes/class-fonts.php';
 require_once SHEAF_DIR . 'includes/class-words.php';
+require_once SHEAF_DIR . 'includes/class-pages.php';
+require_once SHEAF_DIR . 'includes/class-scroll-settings.php';
 require_once SHEAF_DIR . 'includes/class-chapters.php';
 require_once SHEAF_DIR . 'includes/class-permalinks.php';
 require_once SHEAF_DIR . 'includes/class-renderer.php';
@@ -41,6 +43,7 @@ require_once SHEAF_DIR . 'includes/class-import-serializer.php';
 require_once SHEAF_DIR . 'includes/class-import.php';
 require_once SHEAF_DIR . 'includes/class-updater.php';
 require_once SHEAF_DIR . 'includes/class-plugin.php';
+require_once SHEAF_DIR . 'includes/template-tags.php';
 
 Plugin::instance()->boot();
 Updater::register();
