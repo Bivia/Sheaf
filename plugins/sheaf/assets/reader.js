@@ -54,6 +54,13 @@
 	// How far outside the viewport (top and bottom) a chapter stays loaded.
 	var BAND = '1200px 0px';
 
+	// We land the reader on the entry chapter ourselves; don't let the browser
+	// restore a prior scroll position on reload/back, which would fight the
+	// slot-building anchor and drop the reader at the top of the book.
+	if ( 'scrollRestoration' in history ) {
+		history.scrollRestoration = 'manual';
+	}
+
 	document.body.classList.add( 'sheaf-scroll-active' );
 	retitleForBook();
 	rebreadcrumb();
@@ -501,6 +508,16 @@
 		sidebar = document.createElement( 'aside' );
 		sidebar.className = 'sheaf-rail';
 		sidebar.setAttribute( 'aria-label', 'Reading position' );
+
+		// The book title heads the rail: the page <h1> scrolls away quickly, so
+		// this keeps the book named while reading. Links back to the book page.
+		if ( data.bookTitle ) {
+			var book = document.createElement( 'a' );
+			book.className = 'sheaf-rail__book';
+			book.href = data.bookUrl || '#';
+			book.textContent = data.bookTitle;
+			sidebar.appendChild( book );
+		}
 
 		if ( settings.showPageNumbers ) {
 			pageEl = document.createElement( 'div' );

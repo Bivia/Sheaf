@@ -82,6 +82,19 @@
 	visibility: hidden;
 }
 
+.sheaf-rail__book {
+	flex: 0 0 auto;
+	font-weight: 700;
+	font-size: 0.95rem;
+	line-height: 1.25;
+	color: inherit;
+	text-decoration: none;
+}
+
+.sheaf-rail__book:hover {
+	text-decoration: underline;
+}
+
 .sheaf-rail__page {
 	opacity: 0.6;
 	font-variant-numeric: tabular-nums;
