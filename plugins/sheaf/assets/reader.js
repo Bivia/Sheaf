@@ -48,6 +48,7 @@
 	var rail = currentEl.parentNode;
 	var slots = new Array( spine.length );
 	var activeIndex = currentIndex;
+	var pendingScroll = -1; // A chapter a TOC click is scrolling to, once loaded.
 	var pxPerWord = estimatePxPerWord();
 
 	// How far outside the viewport (top and bottom) a chapter stays loaded.
@@ -140,6 +141,23 @@
 		btn.addEventListener( 'click', enterFullBook );
 		bar.appendChild( btn );
 		document.body.appendChild( bar );
+
+		// Keep the affordance above the chapter's end, clear of comments/footer.
+		var margin = 16;
+		var clamp = function () {
+			var chapter = document.querySelector( '.sheaf-chapter' );
+			var bottom = margin;
+			if ( chapter ) {
+				var fromBottom = window.innerHeight - chapter.getBoundingClientRect().bottom + margin;
+				if ( fromBottom > bottom ) {
+					bottom = fromBottom;
+				}
+			}
+			bar.style.bottom = Math.round( bottom ) + 'px';
+		};
+		clamp();
+		window.addEventListener( 'scroll', clamp, { passive: true } );
+		window.addEventListener( 'resize', clamp, { passive: true } );
 	}
 
 	/* --------------------------------------------------------- spine utils -- */
@@ -358,6 +376,13 @@
 		s.loaded = true;
 		s.loading = false;
 
+		// A TOC click that targeted this (then unloaded) chapter now finishes on
+		// its real title, past the break spacer.
+		if ( pendingScroll === idx ) {
+			pendingScroll = -1;
+			scrollToChapterStart( idx );
+		}
+
 		// A large jump (Home/End/PageUp-Down, scrollbar click) can land on an
 		// unloaded spacer, so the scroll handler finds no loaded chapter to make
 		// current. Once the slot it landed on loads, catch up — on the next
@@ -433,12 +458,19 @@
 	// Run once per animation frame while scrolling (and after a load settles):
 	// move the URL to the current chapter and refresh the position sidebar.
 	function onFrame() {
+		layoutSidebar();
 		var pos = currentPosition();
 		if ( ! pos ) {
 			return;
 		}
 		applyActive( pos.index );
 		updateSidebar( pos );
+	}
+
+	// The resting distance from the top of the viewport at which a chapter's
+	// start (and the sidebar) sits: near the top, but not jammed against it.
+	function topInset() {
+		return Math.round( window.innerHeight * 0.08 );
 	}
 
 	// Reflect the current chapter in the URL and document title without a reload.
@@ -499,8 +531,33 @@
 
 		document.body.appendChild( sidebar );
 		positionSidebar();
+		layoutSidebar();
 		highlightToc( activeIndex ); // Mark the landing chapter before any scroll.
 		window.addEventListener( 'resize', positionSidebar, { passive: true } );
+	}
+
+	// Place the sidebar vertically each frame: near the top of the viewport, but
+	// bounded to the book's own span — never above the first chapter's title
+	// (so it clears the breadcrumbs) and never below the last chapter's bottom
+	// (so it never rides over the comments or footer). Its height is capped to
+	// the viewport so a long TOC scrolls within itself.
+	function layoutSidebar() {
+		if ( ! sidebar || sidebar.classList.contains( 'sheaf-rail--hidden' ) ) {
+			return;
+		}
+		var inset = topInset();
+		var availH = window.innerHeight - inset * 2;
+		sidebar.style.maxHeight = availH + 'px';
+
+		var h = sidebar.offsetHeight;
+		var firstTop = slots[ 0 ].el.getBoundingClientRect().top;
+		var lastBottom = slots[ slots.length - 1 ].el.getBoundingClientRect().bottom;
+
+		var top = inset > firstTop ? inset : firstTop; // Not above the first title.
+		if ( top + h > lastBottom ) {
+			top = lastBottom - h; // Not below the last chapter.
+		}
+		sidebar.style.top = Math.round( top ) + 'px';
 	}
 
 	function buildToc() {
@@ -529,7 +586,36 @@
 			return; // Let the browser follow the href.
 		}
 		e.preventDefault();
-		var top = slots[ idx ].el.getBoundingClientRect().top + window.scrollY;
+		scrollToChapter( idx );
+	}
+
+	function scrollToChapter( idx ) {
+		var s = slots[ idx ];
+		if ( ! s ) {
+			return;
+		}
+		if ( s.loaded ) {
+			scrollToChapterStart( idx );
+		} else {
+			// Bring the slot to the viewport so the observer loads it; once it's
+			// real, fillSlot lands precisely on the chapter start.
+			pendingScroll = idx;
+			var top = s.el.getBoundingClientRect().top + window.scrollY - topInset();
+			window.scrollTo( 0, top );
+		}
+	}
+
+	// Put the chapter's title (or its body, when titles are hidden) near the top
+	// of the viewport, past any break spacer that leads the slot.
+	function scrollToChapterStart( idx ) {
+		var s = slots[ idx ];
+		if ( ! s ) {
+			return;
+		}
+		var anchor = s.el.querySelector( '.sheaf-chapter-title' )
+			|| s.el.querySelector( '.sheaf-chapter' )
+			|| s.el;
+		var top = anchor.getBoundingClientRect().top + window.scrollY - topInset();
 		window.scrollTo( 0, top );
 	}
 
