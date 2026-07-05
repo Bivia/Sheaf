@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.7.0
+Stable tag: 0.7.1
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -40,6 +40,10 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.7.1 =
+* Moved the repository to the Bivia organization; point the built-in update
+  checker and release links at the new location.
 
 = 0.7.0 =
 * Full-book scrolling: arrive at any chapter and scroll through the whole book

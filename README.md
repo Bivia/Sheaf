@@ -23,7 +23,7 @@ plugin folder into place.
 Download the latest **`sheaf.zip`** from the releases page and upload it
 through wp-admin:
 
-> **[github.com/BiviaBen/sheaf/releases/latest](https://github.com/BiviaBen/sheaf/releases/latest)**
+> **[github.com/Bivia/Sheaf/releases/latest](https://github.com/Bivia/Sheaf/releases/latest)**
 
 Each release has a ready-to-install `sheaf.zip` attached under **Assets** (it
 already contains the plugin at the archive root, i.e. `sheaf/sheaf.php`). In

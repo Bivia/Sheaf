@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Updater {
 
 	/** Public GitHub repository that publishes Sheaf releases. */
-	const REPO = 'https://github.com/BiviaBen/sheaf/';
+	const REPO = 'https://github.com/Bivia/Sheaf/';
 
 	/** Branch releases are cut from (used only as a fallback when no release exists). */
 	const BRANCH = 'master';
