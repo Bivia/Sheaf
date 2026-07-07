@@ -380,14 +380,16 @@ final class Books_Admin {
 	}
 
 	/**
-	 * The per-book "Display settings" form: the full-book scrolling toggle and
-	 * the options that apply while it is on. Dependent fields are grayed out by
-	 * assets/admin-book-scroll.js when the master toggle is off, but they still
-	 * submit (the JS re-enables them on submit) so their values persist.
+	 * The per-book settings form, in two sections. "Display settings" governs
+	 * the table of contents and breadcrumbs regardless of reading mode.
+	 * "Chapter navigation" picks the reading mode (separate pages vs full-book
+	 * scrolling) with a radio, then shows only the options that apply to the
+	 * chosen mode — assets/admin-book-scroll.js hides the other block. Hidden
+	 * fields still POST, so switching modes never discards the other mode's
+	 * configuration.
 	 */
 	private static function render_display_settings( int $book_id ): void {
 		$s        = Scroll_Settings::get( $book_id );
-		$choices  = Scroll_Settings::break_choices();
 		$page_url = add_query_arg(
 			[
 				'post_type' => Chapters::POST_TYPE,
@@ -397,18 +399,20 @@ final class Books_Admin {
 			admin_url( 'edit.php' )
 		);
 
-		$options = static function ( string $selected ) use ( $choices ): string {
+		// <option> list from a flat value=>label map.
+		$options = static function ( array $choices, string $selected ): string {
 			$out = '';
 			foreach ( $choices as $value => $label ) {
 				$out .= sprintf(
 					'<option value="%s"%s>%s</option>',
-					esc_attr( $value ),
-					selected( $selected, $value, false ),
+					esc_attr( (string) $value ),
+					selected( $selected, (string) $value, false ),
 					esc_html( $label )
 				);
 			}
 			return $out;
 		};
+		$breaks = Scroll_Settings::break_choices();
 
 		echo '<h2>' . esc_html__( 'Display settings', 'sheaf' ) . '</h2>';
 
@@ -424,24 +428,107 @@ final class Books_Admin {
 		}
 
 		echo '<style>
-			.sheaf-scroll-settings .sheaf-scroll-disabled{opacity:.5}
 			.sheaf-scroll-settings .sheaf-scroll-html{margin-top:.6em}
 			.sheaf-scroll-settings .sheaf-scroll-section-break{margin:.6em 0 0;padding-left:1.2em;border-left:3px solid #dcdcde}
+			.sheaf-scroll-settings .sheaf-toc-custom{margin-left:.6em}
+			.sheaf-scroll-mode{margin:.2em 0 1em;border:0;padding:0}
+			.sheaf-scroll-mode__opt{display:block;margin:.6em 0;line-height:1.4}
+			.sheaf-scroll-mode__title{font-weight:600}
+			.sheaf-scroll-mode__hint{display:block;margin-left:1.9em;color:#646970;font-size:12px}
 		</style>';
-
-		echo '<p class="description">' . esc_html__( 'Full-book scrolling lets a reader move through the entire book in one continuous scroll. The options below take effect while it is enabled.', 'sheaf' ) . '</p>';
 
 		printf( '<form method="post" action="%s" class="sheaf-scroll-settings">', esc_url( $page_url ) );
 		wp_nonce_field( self::SCROLL_NONCE, 'sheaf_scroll_nonce' );
 		printf( '<input type="hidden" name="book" value="%d">', (int) $book_id );
 
+		echo '<table class="form-table" role="presentation"><tbody>';
+
+		// Table of contents list style + custom counter-style field.
+		$style_options = '';
+		foreach ( Scroll_Settings::list_style_groups() as $group => $items ) {
+			$style_options .= sprintf( '<optgroup label="%s">%s</optgroup>', esc_attr( $group ), $options( $items, (string) $s['toc_list_style'] ) );
+		}
 		printf(
-			'<p><label><input type="checkbox" id="sheaf-scroll-enabled" name="sheaf_scroll[enabled]" value="1"%s> <strong>%s</strong></label></p>',
-			checked( $s['enabled'], true, false ),
-			esc_html__( 'Enable full-book scrolling', 'sheaf' )
+			'<tr><th scope="row"><label for="sheaf-toc-list-style">%1$s</label></th><td>
+				<select id="sheaf-toc-list-style" name="sheaf_scroll[toc_list_style]">%2$s</select>
+				<span class="sheaf-toc-custom"%3$s><input type="text" name="sheaf_scroll[toc_list_style_custom]" value="%4$s" class="regular-text" placeholder="%5$s"></span>
+				<p class="description">%6$s</p>
+			</td></tr>',
+			esc_html__( 'Table of contents style', 'sheaf' ),
+			$style_options,
+			'custom' === $s['toc_list_style'] ? '' : ' style="display:none"',
+			esc_attr( (string) $s['toc_list_style_custom'] ),
+			esc_attr__( 'e.g. lower-armenian', 'sheaf' ),
+			esc_html__( 'The list marker for the table of contents. “Custom” takes any CSS list-style-type or @counter-style name.', 'sheaf' )
 		);
 
-		echo '<div class="sheaf-scroll-dependent"><table class="form-table" role="presentation"><tbody>';
+		// TOC per-chapter info.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-toc-meta">%1$s</label></th><td>
+				<select id="sheaf-toc-meta" name="sheaf_scroll[toc_meta]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Table of contents per-chapter info', 'sheaf' ),
+			$options( Scroll_Settings::toc_meta_choices(), (string) $s['toc_meta'] ),
+			esc_html__( 'What each table-of-contents entry shows after the chapter title.', 'sheaf' )
+		);
+
+		// Breadcrumb display.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-breadcrumbs">%1$s</label></th><td>
+				<select id="sheaf-breadcrumbs" name="sheaf_scroll[breadcrumbs]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Breadcrumb display', 'sheaf' ),
+			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
+			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
+		);
+
+		echo '</tbody></table>';
+
+		/* ------------------------------------------------ Chapter navigation -- */
+
+		echo '<h2>' . esc_html__( 'Chapter navigation', 'sheaf' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Choose your preferred chapter presentation:', 'sheaf' ) . '</p>';
+
+		echo '<fieldset class="sheaf-scroll-mode">';
+		printf(
+			'<label class="sheaf-scroll-mode__opt"><input type="radio" name="sheaf_scroll[enabled]" value="0"%1$s> <span class="sheaf-scroll-mode__title">%2$s</span><span class="sheaf-scroll-mode__hint">%3$s</span></label>',
+			checked( $s['enabled'], false, false ),
+			esc_html__( 'Each chapter a separate page', 'sheaf' ),
+			esc_html__( 'Readers will load one chapter at a time, and click links to load new chapters.', 'sheaf' )
+		);
+		printf(
+			'<label class="sheaf-scroll-mode__opt"><input type="radio" id="sheaf-scroll-enabled" name="sheaf_scroll[enabled]" value="1"%1$s> <span class="sheaf-scroll-mode__title">%2$s</span><span class="sheaf-scroll-mode__hint">%3$s</span></label>',
+			checked( $s['enabled'], true, false ),
+			esc_html__( 'Enable full-book scrolling', 'sheaf' ),
+			esc_html__( 'Readers will move through the entire book in one continuous scroll.', 'sheaf' )
+		);
+		echo '</fieldset>';
+
+		// --- Separate-page navigation options (hidden while full-book is on). ---
+		$nav_styles                 = Scroll_Settings::nav_style_choices();
+		$nav_styles['back_to_book'] = sprintf(
+			/* translators: %s: book title. */
+			__( 'Back to “%s”', 'sheaf' ),
+			get_the_title( $book_id )
+		);
+
+		echo '<div class="sheaf-scroll-separate"><table class="form-table" role="presentation"><tbody>';
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td><select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select></td></tr>',
+			esc_html__( 'Display chapter navigation at', 'sheaf' ),
+			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] )
+		);
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-style">%1$s</label></th><td><select id="sheaf-nav-style" name="sheaf_scroll[chapter_nav_style]">%2$s</select></td></tr>',
+			esc_html__( 'Chapter navigation style', 'sheaf' ),
+			$options( $nav_styles, (string) $s['chapter_nav_style'] )
+		);
+		echo '</tbody></table></div>';
+
+		// --- Full-book scrolling options (hidden while separate-page is on). ---
+		echo '<div class="sheaf-scroll-fullbook"><table class="form-table" role="presentation"><tbody>';
 
 		// Chapter titles.
 		printf(
@@ -464,7 +551,7 @@ final class Books_Admin {
 				</div>
 			</td></tr>',
 			esc_html__( 'Chapter break', 'sheaf' ),
-			$options( (string) $s['chapter_break'] ),
+			$options( $breaks, (string) $s['chapter_break'] ),
 			esc_html__( 'How consecutive chapters are separated in the scroll.', 'sheaf' ),
 			esc_html__( 'Divider HTML', 'sheaf' ),
 			esc_textarea( (string) $s['chapter_break_html'] ),
@@ -488,7 +575,7 @@ final class Books_Admin {
 			checked( $s['special_section_breaks'], true, false ),
 			esc_html__( 'Give “section” chapters a distinct break after them', 'sheaf' ),
 			esc_html__( 'Section break style', 'sheaf' ),
-			$options( (string) $s['section_break'] ),
+			$options( $breaks, (string) $s['section_break'] ),
 			esc_html__( 'Section divider HTML', 'sheaf' ),
 			esc_textarea( (string) $s['section_break_html'] )
 		);

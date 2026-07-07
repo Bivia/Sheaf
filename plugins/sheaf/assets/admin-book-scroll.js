@@ -1,11 +1,13 @@
 /**
- * Book "Display settings" form behaviour.
+ * Book settings form behaviour.
  *
- * Grays out (disables) the dependent fields when full-book scrolling is off,
- * gates the section-break sub-fields on the "special section breaks" checkbox,
+ * The reading-mode radio shows exactly one options block — the separate-page
+ * navigation options or the full-book scrolling options — and hides the other.
+ * Hiding (rather than disabling) keeps the hidden block's fields in the POST,
+ * so switching modes never discards the other mode's configuration. Within the
+ * full-book block it still gates the section-break sub-fields on their checkbox
  * and reveals a break's divider-HTML textarea only for the "HTML divider"
- * choices. On submit every control is re-enabled so a disabled-but-configured
- * value still persists — toggling the feature off never discards the options.
+ * choices; in Display settings it reveals the custom list-style field.
  */
 ( function () {
 	'use strict';
@@ -15,26 +17,39 @@
 		return;
 	}
 
-	var enabled = form.querySelector( '#sheaf-scroll-enabled' );
-	var dependent = form.querySelector( '.sheaf-scroll-dependent' );
-	var special = form.querySelector( '#sheaf-scroll-special-sections' );
+	var modeRadios  = form.querySelectorAll( 'input[name="sheaf_scroll[enabled]"]' );
+	var fullbook    = form.querySelector( '.sheaf-scroll-fullbook' );
+	var separate    = form.querySelector( '.sheaf-scroll-separate' );
+	var special     = form.querySelector( '#sheaf-scroll-special-sections' );
 	var sectionWrap = form.querySelector( '.sheaf-scroll-section-break' );
-	var breaks = form.querySelectorAll( '.sheaf-scroll-break' );
+	var breaks      = form.querySelectorAll( '.sheaf-scroll-break' );
+	var listStyle   = form.querySelector( '#sheaf-toc-list-style' );
+	var custom      = form.querySelector( '.sheaf-toc-custom' );
 
-	if ( ! enabled ) {
-		return;
+	function show( el, on ) {
+		if ( el ) {
+			el.style.display = on ? '' : 'none';
+		}
 	}
 
-	// Toggle a container's grayed state and disable/enable its controls.
-	function setEnabled( container, on ) {
-		if ( ! container ) {
-			return;
+	// Full-book scrolling is on when the value="1" radio is the checked one.
+	function fullbookOn() {
+		for ( var i = 0; i < modeRadios.length; i++ ) {
+			if ( modeRadios[ i ].checked ) {
+				return '1' === modeRadios[ i ].value;
+			}
 		}
-		container.classList.toggle( 'sheaf-scroll-disabled', ! on );
-		var nodes = container.querySelectorAll( 'input, select, textarea' );
-		for ( var i = 0; i < nodes.length; i++ ) {
-			nodes[ i ].disabled = ! on;
-		}
+		return false;
+	}
+
+	function syncMode() {
+		var on = fullbookOn();
+		show( fullbook, on );
+		show( separate, ! on );
+	}
+
+	function syncSection() {
+		show( sectionWrap, !! ( special && special.checked ) );
 	}
 
 	// Show a break's divider-HTML textarea only for the HTML-divider choices.
@@ -45,37 +60,32 @@
 			return;
 		}
 		var v = select.value;
-		wrap.style.display = ( 'hr' === v || 'hr_page_break' === v ) ? '' : 'none';
+		show( wrap, 'hr' === v || 'hr_page_break' === v );
 	}
 
-	function syncAll() {
-		setEnabled( dependent, enabled.checked );
-		// Section break sub-controls need both the master toggle and the
-		// special-sections checkbox on.
-		setEnabled( sectionWrap, enabled.checked && !! ( special && special.checked ) );
-		for ( var i = 0; i < breaks.length; i++ ) {
-			syncHtml( breaks[ i ] );
-		}
+	function syncCustom() {
+		show( custom, !! ( listStyle && 'custom' === listStyle.value ) );
 	}
 
-	enabled.addEventListener( 'change', syncAll );
+	for ( var i = 0; i < modeRadios.length; i++ ) {
+		modeRadios[ i ].addEventListener( 'change', syncMode );
+	}
 	if ( special ) {
-		special.addEventListener( 'change', syncAll );
+		special.addEventListener( 'change', syncSection );
 	}
-	for ( var i = 0; i < breaks.length; i++ ) {
-		breaks[ i ].addEventListener( 'change', function ( e ) {
+	for ( var j = 0; j < breaks.length; j++ ) {
+		breaks[ j ].addEventListener( 'change', function ( e ) {
 			syncHtml( e.target );
 		} );
 	}
+	if ( listStyle ) {
+		listStyle.addEventListener( 'change', syncCustom );
+	}
 
-	// Re-enable everything before submit so disabled fields still POST their
-	// values (an off toggle must not wipe the configured options).
-	form.addEventListener( 'submit', function () {
-		var nodes = form.querySelectorAll( 'input, select, textarea' );
-		for ( var j = 0; j < nodes.length; j++ ) {
-			nodes[ j ].disabled = false;
-		}
-	} );
-
-	syncAll();
+	syncMode();
+	syncSection();
+	for ( var k = 0; k < breaks.length; k++ ) {
+		syncHtml( breaks[ k ] );
+	}
+	syncCustom();
 }() );
