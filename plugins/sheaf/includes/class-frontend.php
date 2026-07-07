@@ -40,6 +40,7 @@ final class Frontend {
 		// let caches distinguish fragment from full-page responses.
 		add_action( 'template_redirect', [ self::class, 'maybe_serve_fragment' ] );
 		add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_reader' ] );
+		add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_chapter_nav_select' ] );
 		add_action( 'send_headers', [ self::class, 'vary_on_fragment' ] );
 
 		// Themes navigate chapters by post date (a "previous"/"next" chapter from
@@ -211,23 +212,54 @@ final class Frontend {
 	}
 
 	/**
-	 * Append previous/next links to a single chapter's content.
+	 * Insert chapter navigation around a single chapter's content, per the
+	 * book's "Display chapter navigation at" (none/top/bottom/both) and style
+	 * settings. Suppressed entirely in full-book scrolling, where the reader
+	 * provides its own navigation.
 	 */
 	public static function auto_chapter_nav( string $content ): string {
 		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
 			return $content;
 		}
 
-		/** Filter: return false to disable automatic chapter prev/next links. */
+		/** Filter: return false to disable automatic chapter navigation. */
 		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
 			return $content;
 		}
 
-		return $content . Renderer::chapter_nav( (int) get_the_ID() );
+		$id      = (int) get_the_ID();
+		$book_id = Books::get_book_id( $id );
+
+		// Full-book scrolling owns navigation; the per-page nav would be redundant.
+		if ( $book_id && Scroll_Settings::enabled( $book_id ) ) {
+			return $content;
+		}
+
+		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
+		$pos      = (string) $settings['chapter_nav_at'];
+		if ( 'none' === $pos ) {
+			return $content;
+		}
+
+		$nav = Renderer::chapter_nav( $id, (string) $settings['chapter_nav_style'] );
+		if ( '' === $nav ) {
+			return $content;
+		}
+
+		if ( 'top' === $pos ) {
+			return $nav . $content;
+		}
+		if ( 'both' === $pos ) {
+			return $nav . $content . $nav;
+		}
+		return $content . $nav; // bottom (default).
 	}
 
 	/**
-	 * Prepend breadcrumbs to a single chapter's content.
+	 * Insert the chapter breadcrumb trail per the book's "Breadcrumb display"
+	 * setting (top/bottom/both/none). In full-book view the reader rewrites the
+	 * trail client-side to end at the book, so the plain single-chapter fallback
+	 * (no JS, or opted out) stays correct.
 	 */
 	public static function auto_breadcrumbs( string $content ): string {
 		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
@@ -239,10 +271,25 @@ final class Frontend {
 			return $content;
 		}
 
-		// Always render the chapter's own trail here. In full-book view the
-		// reader rewrites it to end at the book (client-side, so the plain
-		// single-chapter fallback — no JS, or opted out — stays correct).
-		return Renderer::breadcrumbs( (int) get_the_ID() ) . $content;
+		$id      = (int) get_the_ID();
+		$book_id = Books::get_book_id( $id );
+		$pos     = $book_id ? (string) Scroll_Settings::get( $book_id )['breadcrumbs'] : 'top';
+		if ( 'none' === $pos ) {
+			return $content;
+		}
+
+		$crumbs = Renderer::breadcrumbs( $id );
+		if ( '' === $crumbs ) {
+			return $content;
+		}
+
+		if ( 'bottom' === $pos ) {
+			return $content . $crumbs;
+		}
+		if ( 'both' === $pos ) {
+			return $crumbs . $content . $crumbs;
+		}
+		return $crumbs . $content; // top (default).
 	}
 
 	/**
@@ -387,6 +434,36 @@ final class Frontend {
 			'window.SheafScroll = ' . wp_json_encode( self::spine( $book_id, $chapter_id ) ) . ';',
 			'before'
 		);
+	}
+
+	/**
+	 * Enqueue the tiny drop-down navigator script, but only on a separate-page
+	 * chapter whose book uses the "Full contents drop-down" navigation style.
+	 * The markup works without it (an inert <select>); this just makes choosing
+	 * an option navigate.
+	 */
+	public static function enqueue_chapter_nav_select(): void {
+		if ( ! is_singular( Chapters::POST_TYPE ) ) {
+			return;
+		}
+		$book_id = Books::get_book_id( (int) get_queried_object_id() );
+
+		// The scroll reader supplies its own navigation, so skip in that mode.
+		if ( $book_id && Scroll_Settings::enabled( $book_id ) ) {
+			return;
+		}
+		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
+			return;
+		}
+
+		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
+		if ( 'none' === $settings['chapter_nav_at'] || 'toc_select' !== $settings['chapter_nav_style'] ) {
+			return;
+		}
+
+		$js  = SHEAF_DIR . 'assets/chapter-nav-select.js';
+		$ver = file_exists( $js ) ? (string) filemtime( $js ) : SHEAF_VERSION;
+		wp_enqueue_script( 'sheaf-chapter-nav-select', SHEAF_URL . 'assets/chapter-nav-select.js', [], $ver, true );
 	}
 
 	/**
