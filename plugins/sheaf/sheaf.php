@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Sheaf
  * Description:       Publish novels as one chapter per post, organised into books and series built from ordinary Pages.
- * Version:           0.7.1
+ * Version:           0.8.0
  * Requires at least: 7.0
  * Requires PHP:      8.3
  * Author:            Bivia
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SHEAF_VERSION', '0.7.1' );
+define( 'SHEAF_VERSION', '0.8.0' );
 define( 'SHEAF_FILE', __FILE__ );
 define( 'SHEAF_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SHEAF_URL', plugin_dir_url( __FILE__ ) );

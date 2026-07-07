@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.7.1
+Stable tag: 0.8.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -45,6 +45,19 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.8.0 =
+* Reorganised the per-book Book settings screen. Display settings now control
+  the table-of-contents list marker (a preset, a CSS keyword, or a quoted
+  bullet such as "⁂") and per-chapter info (reading time, word count, or page
+  number), where the breadcrumb trail sits (top / bottom / both / none), and the
+  chapter navigation placement and style (back-to-book, previous/next, chapter
+  titles, or a full table-of-contents drop-down).
+* Full-book scrolling is now a single toggle in its own section. A reader can
+  still drop to one chapter at a time, so the chapter navigation applies there
+  too.
+* Every book setting auto-saves as you change it — the Save button is gone,
+  matching the chapter-reorder and style-set screens.
 
 = 0.7.1 =
 * Moved the repository to the Bivia organization; point the built-in update
