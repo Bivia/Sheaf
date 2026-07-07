@@ -288,7 +288,7 @@ final class Scroll_Settings {
 			'prev_next'       => __( 'Previous / next only', 'sheaf' ),
 			'title_only'      => __( 'Chapter titles only', 'sheaf' ),
 			'prev_next_title' => __( 'Previous / next with chapter titles', 'sheaf' ),
-			'toc_select'      => __( 'Full contents drop-down', 'sheaf' ),
+			'toc_select'      => __( 'Full TOC drop-down', 'sheaf' ),
 		];
 	}
 
