@@ -8,7 +8,8 @@ theme owns the presentation. Each scrolled-in chapter is rendered by the theme,
 so it inherits the theme's typography and content width.
 
 This document is for theme and custom-template authors. For how it works for
-authors/editors, see the per-book **Display settings** on the book's admin page.
+authors/editors, see the per-book **Display settings** and **Full-book
+scrolling** sections on the book's admin page.
 
 - [Enabling it](#enabling-it)
 - [How delivery works](#how-delivery-works)
@@ -20,10 +21,13 @@ authors/editors, see the per-book **Display settings** on the book's admin page.
 
 ## Enabling it
 
-Per book, on the book Page's admin screen, under **Display settings** →
-*Enable full-book scrolling*. The other options there (chapter titles, chapter
-and section breaks, page numbers, full table of contents) shape what the bundled
-reader shows. Nothing renders differently until the box is checked.
+Per book, on the book Page's admin screen, under **Full-book scrolling**, tick
+*Enable full-book scrolling*. The options below it (chapter titles, chapter and
+section breaks, page numbers, full table of contents) shape what the bundled
+reader shows and stay grayed out until it is enabled. Nothing renders
+differently until the box is checked. A reader can still choose to read one
+chapter at a time, so the book's **Display settings** — breadcrumbs and chapter
+navigation — apply to that single-chapter view regardless.
 
 ## How delivery works
 
@@ -158,8 +162,9 @@ markup is stable API; the rest is what the bundled `reader.js` produces.
 | `.sheaf-rail__toggle` | "Read one chapter at a time" control. |
 | `.sheaf-view-toggle` / `__btn` | "Read the whole book" control on an opted-out plain chapter. |
 
-The reader also hides `.sheaf-chapter-nav` (Sheaf's single-chapter prev/next)
-while active, since the scroll makes it redundant.
+The reader hides `.sheaf-chapter-nav` (Sheaf's single-chapter navigation) while
+active, since the scroll makes it redundant. It is still rendered server-side —
+so it shows for a reader viewing one chapter at a time, or without JS.
 
 ## Building your own reader
 

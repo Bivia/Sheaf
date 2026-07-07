@@ -36,10 +36,7 @@ final class Books_Admin {
 		add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue' ] );
 		add_action( 'wp_ajax_sheaf_reorder', [ self::class, 'ajax_reorder' ] );
 		add_action( 'wp_ajax_sheaf_book_style_sets', [ self::class, 'ajax_save_book_sets' ] );
-
-		// Save the per-book Display settings before the page renders, so we can
-		// redirect (post/redirect/get) and show a clean success notice.
-		add_action( 'admin_init', [ self::class, 'maybe_save_display_settings' ] );
+		add_action( 'wp_ajax_sheaf_scroll_settings', [ self::class, 'ajax_save_scroll' ] );
 
 		// Keep the "Sheafs" menu open/highlighted on the (menu-hidden) chapter
 		// list and editor screens.
@@ -156,7 +153,8 @@ final class Books_Admin {
 			]
 		);
 
-		// Gray out / reveal the dependent Display-settings fields as toggles change.
+		// Gray out / reveal the dependent fields as toggles change, and auto-save
+		// the whole settings form over AJAX (no Save button).
 		$scroll_asset = SHEAF_DIR . 'assets/admin-book-scroll.js';
 		$scroll_ver   = file_exists( $scroll_asset ) ? (string) filemtime( $scroll_asset ) : SHEAF_VERSION;
 		wp_enqueue_script(
@@ -165,6 +163,18 @@ final class Books_Admin {
 			[],
 			$scroll_ver,
 			true
+		);
+		wp_localize_script(
+			'sheaf-book-scroll',
+			'SheafBookScroll',
+			[
+				'ajax'       => admin_url( 'admin-ajax.php' ),
+				'nonce'      => wp_create_nonce( self::SCROLL_NONCE ),
+				'savingText' => __( 'Saving…', 'sheaf' ),
+				'savedText'  => __( 'Saved.', 'sheaf' ),
+				'failedText' => __( 'Save failed.', 'sheaf' ),
+				'warnPrefix' => __( 'Divider HTML may be malformed:', 'sheaf' ),
+			]
 		);
 	}
 
@@ -380,68 +390,133 @@ final class Books_Admin {
 	}
 
 	/**
-	 * The per-book "Display settings" form: the full-book scrolling toggle and
-	 * the options that apply while it is on. Dependent fields are grayed out by
-	 * assets/admin-book-scroll.js when the master toggle is off, but they still
-	 * submit (the JS re-enables them on submit) so their values persist.
+	 * The per-book settings form. Two sections:
+	 *  - "Display settings": table of contents, breadcrumbs, and chapter
+	 *    navigation. These apply to single-chapter views — which a reader always
+	 *    gets when reading one chapter at a time, even on a scrolling book — so
+	 *    they must be configurable regardless of the scrolling toggle.
+	 *  - "Full-book scrolling": the opt-in continuous-scroll reader and its
+	 *    options, grayed out (disabled) until the feature is enabled.
+	 * Every field auto-saves over AJAX (assets/admin-book-scroll.js), like the
+	 * chapter-reorder and style-set screens — there is no Save button. Disabled
+	 * fields are still read by the serializer, so graying out never discards a
+	 * configured value.
 	 */
 	private static function render_display_settings( int $book_id ): void {
-		$s        = Scroll_Settings::get( $book_id );
-		$choices  = Scroll_Settings::break_choices();
-		$page_url = add_query_arg(
-			[
-				'post_type' => Chapters::POST_TYPE,
-				'page'      => self::PAGE,
-				'book'      => $book_id,
-			],
-			admin_url( 'edit.php' )
-		);
+		$s = Scroll_Settings::get( $book_id );
 
-		$options = static function ( string $selected ) use ( $choices ): string {
+		// <option> list from a flat value=>label map.
+		$options = static function ( array $choices, string $selected ): string {
 			$out = '';
 			foreach ( $choices as $value => $label ) {
 				$out .= sprintf(
 					'<option value="%s"%s>%s</option>',
-					esc_attr( $value ),
-					selected( $selected, $value, false ),
+					esc_attr( (string) $value ),
+					selected( $selected, (string) $value, false ),
 					esc_html( $label )
 				);
 			}
 			return $out;
 		};
+		$breaks = Scroll_Settings::break_choices();
 
 		echo '<h2>' . esc_html__( 'Display settings', 'sheaf' ) . '</h2>';
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only flag set by our own PRG redirect.
-		if ( isset( $_GET['sheaf_scroll_saved'] ) ) {
-			echo '<div class="notice notice-success is-dismissible inline"><p>' . esc_html__( 'Display settings saved.', 'sheaf' ) . '</p></div>';
-			foreach ( self::pull_scroll_warnings() as $warning ) {
-				printf(
-					'<div class="notice notice-warning inline"><p>%s</p></div>',
-					esc_html( sprintf( /* translators: %s: HTML parser message. */ __( 'Divider HTML may be malformed: %s', 'sheaf' ), $warning ) )
-				);
-			}
-		}
-
 		echo '<style>
-			.sheaf-scroll-settings .sheaf-scroll-disabled{opacity:.5}
 			.sheaf-scroll-settings .sheaf-scroll-html{margin-top:.6em}
 			.sheaf-scroll-settings .sheaf-scroll-section-break{margin:.6em 0 0;padding-left:1.2em;border-left:3px solid #dcdcde}
+			.sheaf-scroll-settings .sheaf-toc-custom{margin-left:.6em}
+			.sheaf-scroll-settings .sheaf-scroll-disabled{opacity:.5}
+			.sheaf-scroll-enable{margin:.2em 0 .6em}
 		</style>';
 
-		echo '<p class="description">' . esc_html__( 'Full-book scrolling lets a reader move through the entire book in one continuous scroll. The options below take effect while it is enabled.', 'sheaf' ) . '</p>';
+		printf( '<div class="sheaf-scroll-settings" data-book="%d">', (int) $book_id );
 
-		printf( '<form method="post" action="%s" class="sheaf-scroll-settings">', esc_url( $page_url ) );
-		wp_nonce_field( self::SCROLL_NONCE, 'sheaf_scroll_nonce' );
-		printf( '<input type="hidden" name="book" value="%d">', (int) $book_id );
+		echo '<table class="form-table" role="presentation"><tbody>';
+
+		// Table of contents list style + custom keyword/marker field.
+		$style_options = '';
+		foreach ( Scroll_Settings::list_style_groups() as $group => $items ) {
+			$style_options .= sprintf( '<optgroup label="%s">%s</optgroup>', esc_attr( $group ), $options( $items, (string) $s['toc_list_style'] ) );
+		}
+		printf(
+			'<tr><th scope="row"><label for="sheaf-toc-list-style">%1$s</label></th><td>
+				<select id="sheaf-toc-list-style" name="sheaf_scroll[toc_list_style]">%2$s</select>
+				<span class="sheaf-toc-custom"%3$s><input type="text" name="sheaf_scroll[toc_list_style_custom]" value="%4$s" class="regular-text" placeholder="%5$s"></span>
+				<p class="description">%6$s</p>
+			</td></tr>',
+			esc_html__( 'Table of contents style', 'sheaf' ),
+			$style_options,
+			'custom' === $s['toc_list_style'] ? '' : ' style="display:none"',
+			esc_attr( (string) $s['toc_list_style_custom'] ),
+			esc_attr__( 'e.g. lower-armenian or "⁂"', 'sheaf' ),
+			esc_html__( 'The list marker for the table of contents. “Custom” takes a CSS list-style-type or @counter-style keyword (e.g. lower-armenian), or a quoted marker string (e.g. "⁂").', 'sheaf' )
+		);
+
+		// TOC per-chapter info.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-toc-meta">%1$s</label></th><td>
+				<select id="sheaf-toc-meta" name="sheaf_scroll[toc_meta]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Table of contents per-chapter info', 'sheaf' ),
+			$options( Scroll_Settings::toc_meta_choices(), (string) $s['toc_meta'] ),
+			esc_html__( 'What each table-of-contents entry shows after the chapter title.', 'sheaf' )
+		);
+
+		// Breadcrumb display.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-breadcrumbs">%1$s</label></th><td>
+				<select id="sheaf-breadcrumbs" name="sheaf_scroll[breadcrumbs]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Breadcrumb display', 'sheaf' ),
+			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
+			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
+		);
+
+		// Chapter navigation placement.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td>
+				<select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Display chapter navigation at', 'sheaf' ),
+			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] ),
+			esc_html__( 'Where the previous/next chapter navigation is placed on a chapter page.', 'sheaf' )
+		);
+
+		// Chapter navigation style (the "back" option shows the book's title).
+		$nav_styles                 = Scroll_Settings::nav_style_choices();
+		$nav_styles['back_to_book'] = sprintf(
+			/* translators: %s: book title. */
+			__( 'Back to “%s”', 'sheaf' ),
+			get_the_title( $book_id )
+		);
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-style">%1$s</label></th><td>
+				<select id="sheaf-nav-style" name="sheaf_scroll[chapter_nav_style]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Chapter navigation style', 'sheaf' ),
+			$options( $nav_styles, (string) $s['chapter_nav_style'] ),
+			esc_html__( 'What the chapter navigation contains.', 'sheaf' )
+		);
+
+		echo '</tbody></table>';
+
+		/* ------------------------------------------------ Full-book scrolling -- */
+
+		echo '<h2>' . esc_html__( 'Full-book scrolling', 'sheaf' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Allow readers to move through the entire book in one continuous scroll. They can choose to view a single chapter at a time if they like.', 'sheaf' ) . '</p>';
 
 		printf(
-			'<p><label><input type="checkbox" id="sheaf-scroll-enabled" name="sheaf_scroll[enabled]" value="1"%s> <strong>%s</strong></label></p>',
+			'<p class="sheaf-scroll-enable"><label><input type="checkbox" id="sheaf-scroll-enabled" name="sheaf_scroll[enabled]" value="1"%1$s> <strong>%2$s</strong></label></p>',
 			checked( $s['enabled'], true, false ),
 			esc_html__( 'Enable full-book scrolling', 'sheaf' )
 		);
 
-		echo '<div class="sheaf-scroll-dependent"><table class="form-table" role="presentation"><tbody>';
+		echo '<div class="sheaf-scroll-fullbook"><table class="form-table" role="presentation"><tbody>';
 
 		// Chapter titles.
 		printf(
@@ -464,7 +539,7 @@ final class Books_Admin {
 				</div>
 			</td></tr>',
 			esc_html__( 'Chapter break', 'sheaf' ),
-			$options( (string) $s['chapter_break'] ),
+			$options( $breaks, (string) $s['chapter_break'] ),
 			esc_html__( 'How consecutive chapters are separated in the scroll.', 'sheaf' ),
 			esc_html__( 'Divider HTML', 'sheaf' ),
 			esc_textarea( (string) $s['chapter_break_html'] ),
@@ -488,7 +563,7 @@ final class Books_Admin {
 			checked( $s['special_section_breaks'], true, false ),
 			esc_html__( 'Give “section” chapters a distinct break after them', 'sheaf' ),
 			esc_html__( 'Section break style', 'sheaf' ),
-			$options( (string) $s['section_break'] ),
+			$options( $breaks, (string) $s['section_break'] ),
 			esc_html__( 'Section divider HTML', 'sheaf' ),
 			esc_textarea( (string) $s['section_break_html'] )
 		);
@@ -511,24 +586,24 @@ final class Books_Admin {
 
 		echo '</tbody></table></div>';
 
-		submit_button( __( 'Save display settings', 'sheaf' ) );
-		echo '</form>';
+		echo '<p id="sheaf-scroll-status" class="description" aria-live="polite"></p>';
+		echo '<div id="sheaf-scroll-warnings"></div>';
+
+		echo '</div>'; // .sheaf-scroll-settings
 	}
 
 	/**
-	 * Handle the Display settings form on admin_init (before output), then
-	 * redirect back with a success flag. Divider-HTML lint warnings are stashed
-	 * in a short-lived per-user transient and shown after the redirect.
+	 * Auto-save the per-book settings (AJAX). The serialized form arrives under
+	 * the sheaf_scroll[...] namespace, is sanitised through Scroll_Settings, and
+	 * saved. Any divider-HTML lint warnings are returned so the script can show
+	 * them inline (no page reload, so no transient hand-off).
 	 */
-	public static function maybe_save_display_settings(): void {
-		if ( empty( $_POST['sheaf_scroll_nonce'] ) || ! current_user_can( self::CAPABILITY ) ) {
-			return;
-		}
-		check_admin_referer( self::SCROLL_NONCE, 'sheaf_scroll_nonce' );
+	public static function ajax_save_scroll(): void {
+		check_ajax_referer( self::SCROLL_NONCE, 'nonce' );
 
 		$book_id = isset( $_POST['book'] ) ? absint( wp_unslash( $_POST['book'] ) ) : 0;
-		if ( ! $book_id || 'page' !== get_post_type( $book_id ) ) {
-			return;
+		if ( ! $book_id || 'page' !== get_post_type( $book_id ) || ! current_user_can( 'edit_post', $book_id ) ) {
+			wp_send_json_error( 'forbidden', 403 );
 		}
 
 		$settings = Scroll_Settings::from_request( wp_unslash( $_POST ) );
@@ -542,37 +617,8 @@ final class Books_Admin {
 				)
 			)
 		);
-		if ( $warnings ) {
-			set_transient( self::scroll_warn_key(), $warnings, MINUTE_IN_SECONDS );
-		}
 
-		wp_safe_redirect(
-			add_query_arg(
-				[
-					'post_type'          => Chapters::POST_TYPE,
-					'page'               => self::PAGE,
-					'book'               => $book_id,
-					'sheaf_scroll_saved' => 1,
-				],
-				admin_url( 'edit.php' )
-			)
-		);
-		exit;
-	}
-
-	/** Per-user transient key holding divider-HTML lint warnings across the PRG redirect. */
-	private static function scroll_warn_key(): string {
-		return 'sheaf_scroll_warn_' . get_current_user_id();
-	}
-
-	/** Read and clear any stashed divider-HTML lint warnings. */
-	private static function pull_scroll_warnings(): array {
-		$warnings = get_transient( self::scroll_warn_key() );
-		if ( false === $warnings ) {
-			return [];
-		}
-		delete_transient( self::scroll_warn_key() );
-		return is_array( $warnings ) ? $warnings : [];
+		wp_send_json_success( [ 'warnings' => $warnings ] );
 	}
 
 	/**

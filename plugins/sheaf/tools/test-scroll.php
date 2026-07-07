@@ -101,6 +101,51 @@ try {
 	$check( '<hr>' === \Sheaf\Scroll_Settings::break_html( [ 'chapter_break' => 'hr', 'chapter_break_html' => '<hr>' ], 'chapter_break' ), 'break_html: returned for hr' );
 	$check( '' === \Sheaf\Scroll_Settings::break_html( [ 'chapter_break' => 'page_break', 'chapter_break_html' => '<hr>' ], 'chapter_break' ), 'break_html: empty for page_break' );
 
+		/* ---- Display + chapter-navigation settings (new in this release) ---- */
+
+		// Defaults preserve the pre-existing front-end behaviour.
+		$check( 'none' === $d['toc_list_style'], 'default: TOC list style = none' );
+		$check( '' === $d['toc_list_style_custom'], 'default: TOC custom list style empty' );
+		$check( 'reading_time' === $d['toc_meta'], 'default: TOC meta = reading time' );
+		$check( 'top' === $d['breadcrumbs'], 'default: breadcrumbs at top' );
+		$check( 'bottom' === $d['chapter_nav_at'], 'default: chapter nav at bottom' );
+		$check( 'prev_next_title' === $d['chapter_nav_style'], 'default: chapter nav style = prev/next + title' );
+
+		// Enum clamps fall back to the default when the value is unknown.
+		$nav = \Sheaf\Scroll_Settings::sanitize(
+			[
+				'toc_meta'          => 'bogus',
+				'breadcrumbs'       => 'bottom',
+				'chapter_nav_at'    => 'top',
+				'chapter_nav_style' => 'nope',
+			]
+		);
+		$check( 'reading_time' === $nav['toc_meta'], 'sanitize: unknown TOC meta -> default' );
+		$check( 'bottom' === $nav['breadcrumbs'], 'sanitize: valid breadcrumb pos kept' );
+		$check( 'top' === $nav['chapter_nav_at'], 'sanitize: valid nav pos kept' );
+		$check( 'prev_next_title' === $nav['chapter_nav_style'], 'sanitize: unknown nav style -> default' );
+
+		// List-style: known token kept; unknown -> none; custom sentinel + field.
+		$ls = \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'lower-roman' ] );
+		$check( 'lower-roman' === $ls['toc_list_style'], 'sanitize: known list style kept' );
+		$check( 'none' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'nonsense' ] )['toc_list_style'], 'sanitize: unknown list style -> none' );
+
+		// Custom value: quotes and symbols survive; injection chars are stripped.
+		$custom = \Sheaf\Scroll_Settings::sanitize(
+			[ 'toc_list_style' => 'custom', 'toc_list_style_custom' => '"⁂"' ]
+		);
+		$check( 'custom' === $custom['toc_list_style'], 'sanitize: custom sentinel kept' );
+		$check( '"⁂"' === $custom['toc_list_style_custom'], 'sanitize: quoted marker preserved' );
+		$check( 'redbad' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style_custom' => 'red;bad}{<>' ] )['toc_list_style_custom'], 'sanitize: injection chars stripped from custom' );
+
+		// list_style_css() resolves the value to emit: keyword bare, string quoted.
+		$css = static fn( $v ) => \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => $v ] );
+		$check( 'lower-roman' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'lower-roman' ] ), 'list_style_css: token passthrough' );
+		$check( 'lower-armenian' === $css( 'lower-armenian' ), 'list_style_css: custom keyword stays bare' );
+		$check( '"⁂"' === $css( '"⁂"' ), 'list_style_css: quoted marker kept quoted' );
+		$check( '"→"' === $css( '→' ), 'list_style_css: bare symbol auto-quoted' );
+		$check( 'none' === $css( '' ), 'list_style_css: empty custom -> none' );
+
 	// No book -> defaults.
 	$check( \Sheaf\Scroll_Settings::defaults() === \Sheaf\Scroll_Settings::get( 0 ), 'get(0): defaults' );
 
@@ -177,6 +222,54 @@ try {
 	add_filter( 'sheaf_scroll_sidebar', $off );
 	$check( false === sheaf_scroll_spine( $book, $c1 )['settings']['sidebar'], 'filter: sheaf_scroll_sidebar off' );
 	remove_filter( 'sheaf_scroll_sidebar', $off );
+
+	/* ----------------------------------------------------- Renderer::toc ---- */
+	// (Mutates this book's settings, so it runs after the checks above.)
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_list_style' => 'none', 'toc_meta' => 'reading_time' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'list-style-type:none' ), 'toc: list style none inlined' );
+	$check( false !== strpos( $toc, 'min</span>' ), 'toc: reading-time meta shown' );
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_list_style' => 'decimal', 'toc_meta' => 'word_count' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'list-style-type:decimal' ), 'toc: list style decimal inlined' );
+	$check( false !== strpos( $toc, 'words</span>' ), 'toc: word-count meta shown' );
+	$check( false === strpos( $toc, 'min</span>' ), 'toc: no reading time when word count chosen' );
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_meta' => 'page_number' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'p. 1</span>' ), 'toc: page-number meta shows start page' );
+
+	// reading_time="no" override suppresses meta regardless of the setting.
+	$toc = \Sheaf\Renderer::toc( $book, [ 'reading_time' => false ] );
+	$check( false === strpos( $toc, 'sheaf-toc__meta' ), 'toc: reading_time=no suppresses all meta' );
+
+	/* -------------------------------------------- Renderer::chapter_nav ---- */
+	// Order is c1, then the section "Part Two", then c3, so c3's prev is the
+	// section and it has no next.
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'prev_next_title' );
+	$check( false !== strpos( $nav, 'Previous' ) && false !== strpos( $nav, 'Part Two' ), 'nav: prev_next_title shows word + title' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'prev_next' );
+	$check( false !== strpos( $nav, 'Previous' ) && false === strpos( $nav, 'nav__title' ), 'nav: prev_next omits titles' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'title_only' );
+	$check( false !== strpos( $nav, 'Part Two' ) && false === strpos( $nav, 'nav__dir' ), 'nav: title_only omits direction words' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c1, 'back_to_book' );
+	$check( false !== strpos( $nav, 'Back to Scroll Test Book' ), 'nav: back_to_book links to the book' );
+	$check( false !== strpos( $nav, (string) get_permalink( $book ) ), 'nav: back_to_book uses the book permalink' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'toc_select' );
+	$check( false !== strpos( $nav, '<select' ), 'nav: toc_select renders a select' );
+	$check( false !== strpos( $nav, 'selected' ), 'nav: toc_select marks the current chapter' );
+
+	// Empty style reads the book's chapter_nav_style setting.
+	\Sheaf\Scroll_Settings::save( $book, [ 'chapter_nav_style' => 'title_only' ] );
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, '' );
+	$check( false === strpos( $nav, 'nav__dir' ), 'nav: empty style honours the book setting' );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );

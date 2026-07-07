@@ -26,16 +26,21 @@ Model
 Display (all opt-in except the chapter breadcrumb)
 * `[sheaf_toc]` / "Sheaf: Table of Contents" block — a book's chapters in order.
   Auto-detects the book on a book page or chapter; override with
-  `[sheaf_toc book="123"]` or `[sheaf_toc book="page-slug"]`.
+  `[sheaf_toc book="123"]` or `[sheaf_toc book="page-slug"]`. The list marker and
+  the per-chapter info (reading time, word count, or page number) are set per
+  book under the book's Display settings.
 * `[sheaf_breadcrumbs]` / "Sheaf: Breadcrumbs" block — the hierarchy trail.
-* Single chapter views automatically show breadcrumbs (filterable via
-  `sheaf_auto_breadcrumbs`).
+* Single chapter views show breadcrumbs and chapter navigation automatically.
+  Under the book's Display settings, each book chooses where its breadcrumbs sit
+  (top / bottom / both / none) and how its chapter navigation looks (back-to-book,
+  previous/next, chapter titles, or a full-contents drop-down). Both remain
+  filterable via `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
 
 == Roadmap ==
 * Addressable text versions that comments can reference and link to.
 
 Full-book scrolling (arrive at any chapter, scroll through the whole book in
-place) has shipped as a per-book Display setting. Theme and custom-template
+place) has shipped as a per-book Full-book scrolling setting. Theme and custom-template
 authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
