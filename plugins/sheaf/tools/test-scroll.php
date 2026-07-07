@@ -216,6 +216,54 @@ try {
 	add_filter( 'sheaf_scroll_sidebar', $off );
 	$check( false === sheaf_scroll_spine( $book, $c1 )['settings']['sidebar'], 'filter: sheaf_scroll_sidebar off' );
 	remove_filter( 'sheaf_scroll_sidebar', $off );
+
+	/* ----------------------------------------------------- Renderer::toc ---- */
+	// (Mutates this book's settings, so it runs after the checks above.)
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_list_style' => 'none', 'toc_meta' => 'reading_time' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'list-style-type:none' ), 'toc: list style none inlined' );
+	$check( false !== strpos( $toc, 'min</span>' ), 'toc: reading-time meta shown' );
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_list_style' => 'decimal', 'toc_meta' => 'word_count' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'list-style-type:decimal' ), 'toc: list style decimal inlined' );
+	$check( false !== strpos( $toc, 'words</span>' ), 'toc: word-count meta shown' );
+	$check( false === strpos( $toc, 'min</span>' ), 'toc: no reading time when word count chosen' );
+
+	\Sheaf\Scroll_Settings::save( $book, [ 'toc_meta' => 'page_number' ] );
+	$toc = \Sheaf\Renderer::toc( $book );
+	$check( false !== strpos( $toc, 'p. 1</span>' ), 'toc: page-number meta shows start page' );
+
+	// reading_time="no" override suppresses meta regardless of the setting.
+	$toc = \Sheaf\Renderer::toc( $book, [ 'reading_time' => false ] );
+	$check( false === strpos( $toc, 'sheaf-toc__meta' ), 'toc: reading_time=no suppresses all meta' );
+
+	/* -------------------------------------------- Renderer::chapter_nav ---- */
+	// Order is c1, then the section "Part Two", then c3, so c3's prev is the
+	// section and it has no next.
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'prev_next_title' );
+	$check( false !== strpos( $nav, 'Previous' ) && false !== strpos( $nav, 'Part Two' ), 'nav: prev_next_title shows word + title' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'prev_next' );
+	$check( false !== strpos( $nav, 'Previous' ) && false === strpos( $nav, 'nav__title' ), 'nav: prev_next omits titles' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'title_only' );
+	$check( false !== strpos( $nav, 'Part Two' ) && false === strpos( $nav, 'nav__dir' ), 'nav: title_only omits direction words' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c1, 'back_to_book' );
+	$check( false !== strpos( $nav, 'Back to Scroll Test Book' ), 'nav: back_to_book links to the book' );
+	$check( false !== strpos( $nav, (string) get_permalink( $book ) ), 'nav: back_to_book uses the book permalink' );
+
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, 'toc_select' );
+	$check( false !== strpos( $nav, '<select' ), 'nav: toc_select renders a select' );
+	$check( false !== strpos( $nav, 'selected' ), 'nav: toc_select marks the current chapter' );
+
+	// Empty style reads the book's chapter_nav_style setting.
+	\Sheaf\Scroll_Settings::save( $book, [ 'chapter_nav_style' => 'title_only' ] );
+	$nav = \Sheaf\Renderer::chapter_nav( $c3, '' );
+	$check( false === strpos( $nav, 'nav__dir' ), 'nav: empty style honours the book setting' );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );
