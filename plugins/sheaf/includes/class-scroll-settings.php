@@ -173,7 +173,7 @@ final class Scroll_Settings {
 
 		return [
 			'toc_list_style'         => $list,
-			'toc_list_style_custom'  => self::clean_ident( $raw['toc_list_style_custom'] ?? '' ),
+			'toc_list_style_custom'  => self::clean_custom_marker( $raw['toc_list_style_custom'] ?? '' ),
 			'toc_meta'               => $enum( 'toc_meta', self::TOC_META, $d['toc_meta'] ),
 			'breadcrumbs'            => $enum( 'breadcrumbs', self::BREADCRUMB_POS, $d['breadcrumbs'] ),
 			'chapter_nav_at'         => $enum( 'chapter_nav_at', self::NAV_POS, $d['chapter_nav_at'] ),
@@ -293,16 +293,45 @@ final class Scroll_Settings {
 	}
 
 	/**
-	 * The `list-style-type` token to emit for a book's TOC, resolving the
-	 * `custom` sentinel to its sanitised free-text value (empty custom → none).
+	 * The `list-style-type` value to emit for a book's TOC, resolving the
+	 * `custom` sentinel. A custom value is either a CSS keyword / @counter-style
+	 * name (emitted bare, e.g. `lower-armenian`) or a literal marker string
+	 * (emitted quoted, e.g. `"⁂"`) — see custom_list_style(). Empty → none.
 	 */
 	public static function list_style_css( array $settings ): string {
 		$style = (string) ( $settings['toc_list_style'] ?? 'none' );
 		if ( 'custom' !== $style ) {
 			return in_array( $style, self::LIST_STYLES, true ) ? $style : 'none';
 		}
-		$custom = self::clean_ident( $settings['toc_list_style_custom'] ?? '' );
-		return '' !== $custom ? $custom : 'none';
+		return self::custom_list_style( self::clean_custom_marker( $settings['toc_list_style_custom'] ?? '' ) );
+	}
+
+	/**
+	 * Resolve a cleaned custom value to a `list-style-type` value:
+	 *  - empty → `none`
+	 *  - already quoted ("…" or '…') → a normalised double-quoted string
+	 *  - a bare CSS identifier (keyword / @counter-style name) → itself
+	 *  - anything else (a raw symbol like `→`) → quoted as a marker string
+	 * The input has already been stripped of characters that could escape the
+	 * declaration or the style attribute (see clean_custom_marker), and the
+	 * caller escapes the attribute, so quoting here is purely about CSS meaning.
+	 */
+	private static function custom_list_style( string $value ): string {
+		$value = trim( $value );
+		if ( '' === $value ) {
+			return 'none';
+		}
+		$len = strlen( $value );
+		if ( $len >= 2
+			&& ( ( '"' === $value[0] && '"' === $value[ $len - 1 ] )
+				|| ( "'" === $value[0] && "'" === $value[ $len - 1 ] ) )
+		) {
+			return '"' . str_replace( '"', '', substr( $value, 1, -1 ) ) . '"';
+		}
+		if ( preg_match( '/^[A-Za-z][A-Za-z0-9-]*$/', $value ) ) {
+			return $value;
+		}
+		return '"' . str_replace( '"', '', $value ) . '"';
 	}
 
 	/**
@@ -377,7 +406,7 @@ final class Scroll_Settings {
 		};
 		return [
 			'toc_list_style'         => 'custom' === $s['toc_list_style'] ? 'custom' : $in_set( $s['toc_list_style'], self::LIST_STYLES, $d['toc_list_style'] ),
-			'toc_list_style_custom'  => self::clean_ident( $s['toc_list_style_custom'] ),
+			'toc_list_style_custom'  => self::clean_custom_marker( $s['toc_list_style_custom'] ),
 			'toc_meta'               => $in_set( $s['toc_meta'], self::TOC_META, $d['toc_meta'] ),
 			'breadcrumbs'            => $in_set( $s['breadcrumbs'], self::BREADCRUMB_POS, $d['breadcrumbs'] ),
 			'chapter_nav_at'         => $in_set( $s['chapter_nav_at'], self::NAV_POS, $d['chapter_nav_at'] ),
@@ -403,17 +432,19 @@ final class Scroll_Settings {
 	}
 
 	/**
-	 * Reduce a custom list-style value to a bare CSS identifier — letters,
-	 * digits and hyphens only, capped in length. This is what lets the value be
-	 * dropped into an inline `list-style-type` declaration safely: nothing that
-	 * could close the declaration, the style attribute, or the tag survives.
-	 * (A named @counter-style or keyword is the intended use.)
+	 * Clean a custom list-style value while preserving both intended forms — a
+	 * keyword/@counter-style name and a quoted marker string like "⁂". Only the
+	 * characters that could escape the inline declaration, the style attribute,
+	 * or the tag are stripped: `; { } < > ( ) \` and control characters. Quotes,
+	 * spaces and arbitrary symbols survive; the result is capped in length.
 	 */
-	private static function clean_ident( $value ): string {
+	private static function clean_custom_marker( $value ): string {
 		if ( ! is_string( $value ) ) {
 			return '';
 		}
-		$value = preg_replace( '/[^A-Za-z0-9-]/', '', $value );
-		return substr( (string) $value, 0, 64 );
+		$value = preg_replace( '/[;{}<>()\\\\]/', '', $value );
+		$value = preg_replace( '/[\x00-\x1F]+/', '', (string) $value );
+		$value = trim( (string) $value );
+		return function_exists( 'mb_substr' ) ? mb_substr( $value, 0, 64 ) : substr( $value, 0, 64 );
 	}
 }

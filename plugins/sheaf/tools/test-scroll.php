@@ -128,17 +128,23 @@ try {
 		// List-style: known token kept; unknown -> none; custom sentinel + field.
 		$ls = \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'lower-roman' ] );
 		$check( 'lower-roman' === $ls['toc_list_style'], 'sanitize: known list style kept' );
-		$check( 'none' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'url(x)' ] )['toc_list_style'], 'sanitize: unknown list style -> none' );
+		$check( 'none' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'nonsense' ] )['toc_list_style'], 'sanitize: unknown list style -> none' );
+
+		// Custom value: quotes and symbols survive; injection chars are stripped.
 		$custom = \Sheaf\Scroll_Settings::sanitize(
-			[ 'toc_list_style' => 'custom', 'toc_list_style_custom' => 'lower-roman"; }</' ]
+			[ 'toc_list_style' => 'custom', 'toc_list_style_custom' => '"⁂"' ]
 		);
 		$check( 'custom' === $custom['toc_list_style'], 'sanitize: custom sentinel kept' );
-		$check( 'lower-roman' === $custom['toc_list_style_custom'], 'sanitize: custom value stripped to identifier' );
+		$check( '"⁂"' === $custom['toc_list_style_custom'], 'sanitize: quoted marker preserved' );
+		$check( 'redbad' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style_custom' => 'red;bad}{<>' ] )['toc_list_style_custom'], 'sanitize: injection chars stripped from custom' );
 
-		// list_style_css() resolves the token to emit.
+		// list_style_css() resolves the value to emit: keyword bare, string quoted.
+		$css = static fn( $v ) => \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => $v ] );
 		$check( 'lower-roman' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'lower-roman' ] ), 'list_style_css: token passthrough' );
-		$check( 'my-counter' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => 'my-counter' ] ), 'list_style_css: custom resolves' );
-		$check( 'none' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => '' ] ), 'list_style_css: empty custom -> none' );
+		$check( 'lower-armenian' === $css( 'lower-armenian' ), 'list_style_css: custom keyword stays bare' );
+		$check( '"⁂"' === $css( '"⁂"' ), 'list_style_css: quoted marker kept quoted' );
+		$check( '"→"' === $css( '→' ), 'list_style_css: bare symbol auto-quoted' );
+		$check( 'none' === $css( '' ), 'list_style_css: empty custom -> none' );
 
 	// No book -> defaults.
 	$check( \Sheaf\Scroll_Settings::defaults() === \Sheaf\Scroll_Settings::get( 0 ), 'get(0): defaults' );

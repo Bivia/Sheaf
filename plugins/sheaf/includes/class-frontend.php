@@ -214,8 +214,9 @@ final class Frontend {
 	/**
 	 * Insert chapter navigation around a single chapter's content, per the
 	 * book's "Display chapter navigation at" (none/top/bottom/both) and style
-	 * settings. Suppressed entirely in full-book scrolling, where the reader
-	 * provides its own navigation.
+	 * settings. Always rendered — a reader can view one chapter at a time even
+	 * when full-book scrolling is on (the active reader hides it via CSS, so it
+	 * only shows in the single-chapter view or without JS).
 	 */
 	public static function auto_chapter_nav( string $content ): string {
 		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
@@ -229,11 +230,6 @@ final class Frontend {
 
 		$id      = (int) get_the_ID();
 		$book_id = Books::get_book_id( $id );
-
-		// Full-book scrolling owns navigation; the per-page nav would be redundant.
-		if ( $book_id && Scroll_Settings::enabled( $book_id ) ) {
-			return $content;
-		}
 
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
 		$pos      = (string) $settings['chapter_nav_at'];
@@ -446,15 +442,10 @@ final class Frontend {
 		if ( ! is_singular( Chapters::POST_TYPE ) ) {
 			return;
 		}
-		$book_id = Books::get_book_id( (int) get_queried_object_id() );
-
-		// The scroll reader supplies its own navigation, so skip in that mode.
-		if ( $book_id && Scroll_Settings::enabled( $book_id ) ) {
-			return;
-		}
 		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
 			return;
 		}
+		$book_id = Books::get_book_id( (int) get_queried_object_id() );
 
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
 		if ( 'none' === $settings['chapter_nav_at'] || 'toc_select' !== $settings['chapter_nav_style'] ) {

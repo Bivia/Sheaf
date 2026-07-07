@@ -8,8 +8,8 @@ theme owns the presentation. Each scrolled-in chapter is rendered by the theme,
 so it inherits the theme's typography and content width.
 
 This document is for theme and custom-template authors. For how it works for
-authors/editors, see the per-book **Display settings** and **Chapter
-navigation** sections on the book's admin page.
+authors/editors, see the per-book **Display settings** and **Full-book
+scrolling** sections on the book's admin page.
 
 - [Enabling it](#enabling-it)
 - [How delivery works](#how-delivery-works)
@@ -21,11 +21,13 @@ navigation** sections on the book's admin page.
 
 ## Enabling it
 
-Per book, on the book Page's admin screen, under **Chapter navigation**, choose
-*Enable full-book scrolling* (the default is *Each chapter a separate page*).
-The full-book options that appear below it (chapter titles, chapter and section
-breaks, page numbers, full table of contents) shape what the bundled reader
-shows. Nothing renders differently until it is selected.
+Per book, on the book Page's admin screen, under **Full-book scrolling**, tick
+*Enable full-book scrolling*. The options below it (chapter titles, chapter and
+section breaks, page numbers, full table of contents) shape what the bundled
+reader shows and stay grayed out until it is enabled. Nothing renders
+differently until the box is checked. A reader can still choose to read one
+chapter at a time, so the book's **Display settings** — breadcrumbs and chapter
+navigation — apply to that single-chapter view regardless.
 
 ## How delivery works
 
@@ -160,9 +162,9 @@ markup is stable API; the rest is what the bundled `reader.js` produces.
 | `.sheaf-rail__toggle` | "Read one chapter at a time" control. |
 | `.sheaf-view-toggle` / `__btn` | "Read the whole book" control on an opted-out plain chapter. |
 
-Under full-book scrolling, Sheaf's single-chapter navigation
-(`.sheaf-chapter-nav`) is suppressed server-side, since the scroll makes it
-redundant; the bundled reader also hides any left in the DOM.
+The reader hides `.sheaf-chapter-nav` (Sheaf's single-chapter navigation) while
+active, since the scroll makes it redundant. It is still rendered server-side —
+so it shows for a reader viewing one chapter at a time, or without JS.
 
 ## Building your own reader
 

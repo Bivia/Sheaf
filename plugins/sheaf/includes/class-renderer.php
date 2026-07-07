@@ -302,12 +302,10 @@ final class Renderer {
 			);
 		}
 
-		$label = esc_html__( 'Jump to chapter', 'sheaf' );
-
 		return sprintf(
-			'<nav class="sheaf-chapter-nav sheaf-chapter-nav--select" aria-label="%1$s"><label class="sheaf-chapter-nav__select-label" for="sheaf-chapter-select">%2$s</label> <select id="sheaf-chapter-select" class="sheaf-chapter-nav__select">%3$s</select></nav>',
+			'<nav class="sheaf-chapter-nav sheaf-chapter-nav--select" aria-label="%1$s"><select class="sheaf-chapter-nav__select" aria-label="%2$s">%3$s</select></nav>',
 			esc_attr__( 'Chapter navigation', 'sheaf' ),
-			$label,
+			esc_attr__( 'Jump to chapter', 'sheaf' ),
 			$options
 		);
 	}
