@@ -38,13 +38,58 @@ final class Scroll_Settings {
 	public const HTML_BREAKS = [ 'hr', 'hr_page_break' ];
 
 	/**
+	 * Curated `list-style-type` tokens offered for the table of contents, plus
+	 * the sentinel `custom` (which pairs with toc_list_style_custom). Any token
+	 * here is emitted verbatim into an inline style; `custom` is sanitised to a
+	 * bare identifier before use.
+	 */
+	public const LIST_STYLES = [
+		'none',
+		'disc',
+		'circle',
+		'square',
+		'decimal',
+		'decimal-leading-zero',
+		'lower-roman',
+		'upper-roman',
+		'lower-alpha',
+		'upper-alpha',
+		'lower-greek',
+	];
+
+	/** What (if anything) each TOC item shows after the chapter title. */
+	public const TOC_META = [ 'none', 'reading_time', 'word_count', 'page_number' ];
+
+	/** Where the chapter breadcrumb trail is inserted on a single chapter view. */
+	public const BREADCRUMB_POS = [ 'top', 'bottom', 'both', 'none' ];
+
+	/** Where the chapter prev/next navigation is inserted (separate-page mode). */
+	public const NAV_POS = [ 'none', 'top', 'bottom', 'both' ];
+
+	/** What the chapter navigation contains (separate-page mode). */
+	public const NAV_STYLE = [ 'back_to_book', 'prev_next', 'title_only', 'prev_next_title', 'toc_select' ];
+
+	/**
 	 * Factory defaults. A book with no saved settings reads exactly this.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public static function defaults(): array {
 		return [
+			// Display settings — independent of the reading mode below.
+			'toc_list_style'         => 'none',
+			'toc_list_style_custom'  => '',
+			'toc_meta'               => 'reading_time',
+			'breadcrumbs'            => 'top',
+
+			// Reading mode: separate pages (default) unless full-book scrolling.
 			'enabled'                => false,
+
+			// Separate-page chapter navigation.
+			'chapter_nav_at'         => 'bottom',
+			'chapter_nav_style'      => 'prev_next_title',
+
+			// Full-book scrolling options (apply only while `enabled`).
 			'chapter_titles'         => true,
 			'chapter_break'          => 'page_break',
 			'chapter_break_html'     => '',
@@ -116,8 +161,23 @@ final class Scroll_Settings {
 			$v = ( isset( $raw[ $k ] ) && is_string( $raw[ $k ] ) ) ? $raw[ $k ] : '';
 			return in_array( $v, self::BREAKS, true ) ? $v : $fallback;
 		};
+		// Clamp a value to a known set, falling back to the default when unknown.
+		$enum = static function ( string $k, array $allowed, string $fallback ) use ( $raw ): string {
+			$v = ( isset( $raw[ $k ] ) && is_string( $raw[ $k ] ) ) ? $raw[ $k ] : '';
+			return in_array( $v, $allowed, true ) ? $v : $fallback;
+		};
+		// The TOC list style is either the `custom` sentinel or a known token.
+		$list = 'custom' === ( $raw['toc_list_style'] ?? '' )
+			? 'custom'
+			: $enum( 'toc_list_style', self::LIST_STYLES, $d['toc_list_style'] );
 
 		return [
+			'toc_list_style'         => $list,
+			'toc_list_style_custom'  => self::clean_ident( $raw['toc_list_style_custom'] ?? '' ),
+			'toc_meta'               => $enum( 'toc_meta', self::TOC_META, $d['toc_meta'] ),
+			'breadcrumbs'            => $enum( 'breadcrumbs', self::BREADCRUMB_POS, $d['breadcrumbs'] ),
+			'chapter_nav_at'         => $enum( 'chapter_nav_at', self::NAV_POS, $d['chapter_nav_at'] ),
+			'chapter_nav_style'      => $enum( 'chapter_nav_style', self::NAV_STYLE, $d['chapter_nav_style'] ),
 			'enabled'                => $bool( 'enabled' ),
 			'chapter_titles'         => $bool( 'chapter_titles' ),
 			'chapter_break'          => $break( 'chapter_break', $d['chapter_break'] ),
@@ -143,6 +203,106 @@ final class Scroll_Settings {
 			'page_break'    => __( 'Page break', 'sheaf' ),
 			'hr_page_break' => __( 'HTML divider, then page break', 'sheaf' ),
 		];
+	}
+
+	/**
+	 * TOC list-style options for the admin dropdown, grouped for <optgroup>s.
+	 * The everyday choices (and the `custom` sentinel) sit up top; the rest
+	 * follow. Values map to `list-style-type` tokens; `custom` pairs with a
+	 * free-text field.
+	 *
+	 * @return array<string,array<string,string>>
+	 */
+	public static function list_style_groups(): array {
+		return [
+			__( 'Common', 'sheaf' ) => [
+				'none'    => __( 'None', 'sheaf' ),
+				'custom'  => __( 'Custom…', 'sheaf' ),
+				'disc'    => __( 'Disk (bullet)', 'sheaf' ),
+				'decimal' => __( 'Decimal (numbered)', 'sheaf' ),
+			],
+			__( 'More', 'sheaf' ) => [
+				'circle'               => __( 'Circle', 'sheaf' ),
+				'square'               => __( 'Square', 'sheaf' ),
+				'decimal-leading-zero' => __( 'Decimal, leading zero', 'sheaf' ),
+				'lower-roman'          => __( 'Lower roman (i, ii, iii)', 'sheaf' ),
+				'upper-roman'          => __( 'Upper roman (I, II, III)', 'sheaf' ),
+				'lower-alpha'          => __( 'Lower alpha (a, b, c)', 'sheaf' ),
+				'upper-alpha'          => __( 'Upper alpha (A, B, C)', 'sheaf' ),
+				'lower-greek'          => __( 'Lower greek (α, β, γ)', 'sheaf' ),
+			],
+		];
+	}
+
+	/**
+	 * Value=>label map for the "per-chapter info" TOC dropdown.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function toc_meta_choices(): array {
+		return [
+			'none'         => __( 'None', 'sheaf' ),
+			'reading_time' => __( 'Reading time', 'sheaf' ),
+			'word_count'   => __( 'Word count', 'sheaf' ),
+			'page_number'  => __( 'Page number in book', 'sheaf' ),
+		];
+	}
+
+	/**
+	 * Value=>label map for the breadcrumb-placement dropdown.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function breadcrumb_choices(): array {
+		return [
+			'top'    => __( 'Top', 'sheaf' ),
+			'bottom' => __( 'Bottom', 'sheaf' ),
+			'both'   => __( 'Top and bottom', 'sheaf' ),
+			'none'   => __( 'None', 'sheaf' ),
+		];
+	}
+
+	/**
+	 * Value=>label map for "display chapter navigation at".
+	 *
+	 * @return array<string,string>
+	 */
+	public static function nav_pos_choices(): array {
+		return [
+			'none'   => __( 'None', 'sheaf' ),
+			'top'    => __( 'Top', 'sheaf' ),
+			'bottom' => __( 'Bottom', 'sheaf' ),
+			'both'   => __( 'Top and bottom', 'sheaf' ),
+		];
+	}
+
+	/**
+	 * Value=>label map for the chapter-navigation style. The "back_to_book"
+	 * label is generic here; the admin screen substitutes the book's title.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function nav_style_choices(): array {
+		return [
+			'back_to_book'    => __( 'Back to the book', 'sheaf' ),
+			'prev_next'       => __( 'Previous / next only', 'sheaf' ),
+			'title_only'      => __( 'Chapter titles only', 'sheaf' ),
+			'prev_next_title' => __( 'Previous / next with chapter titles', 'sheaf' ),
+			'toc_select'      => __( 'Full contents drop-down', 'sheaf' ),
+		];
+	}
+
+	/**
+	 * The `list-style-type` token to emit for a book's TOC, resolving the
+	 * `custom` sentinel to its sanitised free-text value (empty custom → none).
+	 */
+	public static function list_style_css( array $settings ): string {
+		$style = (string) ( $settings['toc_list_style'] ?? 'none' );
+		if ( 'custom' !== $style ) {
+			return in_array( $style, self::LIST_STYLES, true ) ? $style : 'none';
+		}
+		$custom = self::clean_ident( $settings['toc_list_style_custom'] ?? '' );
+		return '' !== $custom ? $custom : 'none';
 	}
 
 	/**
@@ -211,8 +371,17 @@ final class Scroll_Settings {
 	 * @return array<string,mixed>
 	 */
 	private static function coerce( array $s ): array {
-		$d = self::defaults();
+		$d      = self::defaults();
+		$in_set = static function ( $v, array $allowed, string $fallback ): string {
+			return in_array( $v, $allowed, true ) ? (string) $v : $fallback;
+		};
 		return [
+			'toc_list_style'         => 'custom' === $s['toc_list_style'] ? 'custom' : $in_set( $s['toc_list_style'], self::LIST_STYLES, $d['toc_list_style'] ),
+			'toc_list_style_custom'  => self::clean_ident( $s['toc_list_style_custom'] ),
+			'toc_meta'               => $in_set( $s['toc_meta'], self::TOC_META, $d['toc_meta'] ),
+			'breadcrumbs'            => $in_set( $s['breadcrumbs'], self::BREADCRUMB_POS, $d['breadcrumbs'] ),
+			'chapter_nav_at'         => $in_set( $s['chapter_nav_at'], self::NAV_POS, $d['chapter_nav_at'] ),
+			'chapter_nav_style'      => $in_set( $s['chapter_nav_style'], self::NAV_STYLE, $d['chapter_nav_style'] ),
 			'enabled'                => (bool) $s['enabled'],
 			'chapter_titles'         => (bool) $s['chapter_titles'],
 			'chapter_break'          => in_array( $s['chapter_break'], self::BREAKS, true ) ? (string) $s['chapter_break'] : $d['chapter_break'],
@@ -231,5 +400,20 @@ final class Scroll_Settings {
 	 */
 	private static function clean_html( $html ): string {
 		return is_string( $html ) ? trim( $html ) : '';
+	}
+
+	/**
+	 * Reduce a custom list-style value to a bare CSS identifier — letters,
+	 * digits and hyphens only, capped in length. This is what lets the value be
+	 * dropped into an inline `list-style-type` declaration safely: nothing that
+	 * could close the declaration, the style attribute, or the tag survives.
+	 * (A named @counter-style or keyword is the intended use.)
+	 */
+	private static function clean_ident( $value ): string {
+		if ( ! is_string( $value ) ) {
+			return '';
+		}
+		$value = preg_replace( '/[^A-Za-z0-9-]/', '', $value );
+		return substr( (string) $value, 0, 64 );
 	}
 }

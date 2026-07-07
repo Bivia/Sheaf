@@ -101,6 +101,45 @@ try {
 	$check( '<hr>' === \Sheaf\Scroll_Settings::break_html( [ 'chapter_break' => 'hr', 'chapter_break_html' => '<hr>' ], 'chapter_break' ), 'break_html: returned for hr' );
 	$check( '' === \Sheaf\Scroll_Settings::break_html( [ 'chapter_break' => 'page_break', 'chapter_break_html' => '<hr>' ], 'chapter_break' ), 'break_html: empty for page_break' );
 
+		/* ---- Display + chapter-navigation settings (new in this release) ---- */
+
+		// Defaults preserve the pre-existing front-end behaviour.
+		$check( 'none' === $d['toc_list_style'], 'default: TOC list style = none' );
+		$check( '' === $d['toc_list_style_custom'], 'default: TOC custom list style empty' );
+		$check( 'reading_time' === $d['toc_meta'], 'default: TOC meta = reading time' );
+		$check( 'top' === $d['breadcrumbs'], 'default: breadcrumbs at top' );
+		$check( 'bottom' === $d['chapter_nav_at'], 'default: chapter nav at bottom' );
+		$check( 'prev_next_title' === $d['chapter_nav_style'], 'default: chapter nav style = prev/next + title' );
+
+		// Enum clamps fall back to the default when the value is unknown.
+		$nav = \Sheaf\Scroll_Settings::sanitize(
+			[
+				'toc_meta'          => 'bogus',
+				'breadcrumbs'       => 'bottom',
+				'chapter_nav_at'    => 'top',
+				'chapter_nav_style' => 'nope',
+			]
+		);
+		$check( 'reading_time' === $nav['toc_meta'], 'sanitize: unknown TOC meta -> default' );
+		$check( 'bottom' === $nav['breadcrumbs'], 'sanitize: valid breadcrumb pos kept' );
+		$check( 'top' === $nav['chapter_nav_at'], 'sanitize: valid nav pos kept' );
+		$check( 'prev_next_title' === $nav['chapter_nav_style'], 'sanitize: unknown nav style -> default' );
+
+		// List-style: known token kept; unknown -> none; custom sentinel + field.
+		$ls = \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'lower-roman' ] );
+		$check( 'lower-roman' === $ls['toc_list_style'], 'sanitize: known list style kept' );
+		$check( 'none' === \Sheaf\Scroll_Settings::sanitize( [ 'toc_list_style' => 'url(x)' ] )['toc_list_style'], 'sanitize: unknown list style -> none' );
+		$custom = \Sheaf\Scroll_Settings::sanitize(
+			[ 'toc_list_style' => 'custom', 'toc_list_style_custom' => 'lower-roman"; }</' ]
+		);
+		$check( 'custom' === $custom['toc_list_style'], 'sanitize: custom sentinel kept' );
+		$check( 'lower-roman' === $custom['toc_list_style_custom'], 'sanitize: custom value stripped to identifier' );
+
+		// list_style_css() resolves the token to emit.
+		$check( 'lower-roman' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'lower-roman' ] ), 'list_style_css: token passthrough' );
+		$check( 'my-counter' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => 'my-counter' ] ), 'list_style_css: custom resolves' );
+		$check( 'none' === \Sheaf\Scroll_Settings::list_style_css( [ 'toc_list_style' => 'custom', 'toc_list_style_custom' => '' ] ), 'list_style_css: empty custom -> none' );
+
 	// No book -> defaults.
 	$check( \Sheaf\Scroll_Settings::defaults() === \Sheaf\Scroll_Settings::get( 0 ), 'get(0): defaults' );
 
