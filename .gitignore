@@ -18,6 +18,9 @@ build/
 /playwright/.cache/
 tests/e2e/.auth/
 
+# Local test input (e.g. scrambled sample manuscripts) — never committed
+/sample-data/
+
 # Logs & OS/editor cruft
 *.log
 .DS_Store

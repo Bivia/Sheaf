@@ -25,21 +25,29 @@ final class Import {
 	private const PAGE        = 'sheaf-import';
 	private const NONCE_UP    = 'sheaf_import_upload';
 	private const NONCE_CREATE = 'sheaf_import_create';
-	private const TRANSIENT   = 'sheaf_import_';
+	private const STORE_DIR   = 'sheaf-import';
 	private const TTL         = HOUR_IN_SECONDS;
 	private const MAX_BYTES   = 26214400; // 25 MB per file.
 
 	public static function register(): void {
-		// Priority 11 so this lands after Books_Admin's submenus (New Chapter).
 		add_action( 'admin_menu', [ self::class, 'add_page' ], 11 );
 		add_action( 'admin_post_' . self::NONCE_UP, [ self::class, 'handle_upload' ] );
 		add_action( 'admin_post_' . self::NONCE_CREATE, [ self::class, 'handle_create' ] );
 
-		// Keep the Sheafs menu highlighted on our screen, and add an "Import"
-		// button to the core chapter list + a post-import success notice.
+		// The import screen is a real (accessible) submenu whose visible menu item
+		// is hidden with CSS — it is reached from the "Import chapters" button on
+		// the chapter list. Being a real child keeps the Sheafs menu highlighted
+		// for both PHP and the admin-menu JS; the submenu_file filter points the
+		// highlight at the visible "Chapters" item while importing.
+		add_action( 'admin_head', [ self::class, 'hide_menu_css' ] );
 		add_filter( 'submenu_file', [ self::class, 'highlight_submenu' ] );
 		add_action( 'admin_head-edit.php', [ self::class, 'listing_button' ] );
 		add_action( 'admin_notices', [ self::class, 'imported_notice' ] );
+
+		// Sweep abandoned import sessions hourly (belt-and-suspenders alongside
+		// the sweep on each upload).
+		add_action( 'sheaf_import_gc', [ self::class, 'gc' ] );
+		add_action( 'admin_init', [ self::class, 'schedule_gc' ] );
 	}
 
 	/**
@@ -54,6 +62,9 @@ final class Import {
 	}
 
 	public static function add_page(): void {
+		// A real submenu of the Sheafs menu, so the page is accessible and the
+		// menu highlights correctly. Its visible item is hidden by hide_menu_css()
+		// — the screen is reached from the chapter list's "Import chapters" button.
 		add_submenu_page(
 			Books_Admin::MENU_SLUG,
 			__( 'Import Chapters', 'sheaf' ),
@@ -65,14 +76,26 @@ final class Import {
 	}
 
 	/**
-	 * Highlight the Import submenu while on the import screen.
+	 * Hide the import item from the Sheafs submenu (it is reached from the chapter
+	 * list's button). The page stays a real, accessible, highlight-able child;
+	 * only its visible menu link is removed. Scoped to #adminmenu so the button
+	 * elsewhere is unaffected.
+	 */
+	public static function hide_menu_css(): void {
+		echo '<style>#adminmenu a[href*="page=' . esc_attr( self::PAGE ) . '"]{display:none}</style>';
+	}
+
+	/**
+	 * Highlight the "Chapters" item while on the import screen.
 	 */
 	public static function highlight_submenu( ?string $submenu_file ): ?string {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only check.
-		if ( isset( $_GET['page'] ) && self::PAGE === $_GET['page'] ) {
-			return self::PAGE;
-		}
-		return $submenu_file;
+		return self::on_screen() ? 'edit.php?post_type=' . Chapters::POST_TYPE : $submenu_file;
+	}
+
+	/** Whether the current request is the import screen. */
+	private static function on_screen(): bool {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only nav check.
+		return isset( $_GET['page'] ) && self::PAGE === $_GET['page'];
 	}
 
 	/**
@@ -154,7 +177,7 @@ final class Import {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only pre-fill.
 		$book = isset( $_GET['sheaf_book'] ) ? absint( $_GET['sheaf_book'] ) : 0;
 
-		echo '<p class="description">' . esc_html__( 'Upload one or more Word (.docx) files — each file becomes a draft chapter. Word formatting is cleaned up on import; you can fix titles and order on the next screen.', 'sheaf' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Upload one or more Word (.docx) files. Each file becomes a draft chapter — or, for a whole book in one file, split it into chapters at the breaks you choose. Word formatting is cleaned up on import; you can fix titles and order on the next screen.', 'sheaf' ) . '</p>';
 
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::NONCE_UP );
@@ -174,12 +197,56 @@ final class Import {
 		echo '<p class="description">' . esc_html__( 'Select multiple files to import several chapters at once.', 'sheaf' ) . '</p>';
 		echo '</td></tr>';
 
+		// Split mode: one chapter per file, or split a whole-book file.
+		echo '<tr><th scope="row">' . esc_html__( 'Chapters', 'sheaf' ) . '</th><td>';
+		echo '<fieldset>';
+		echo '<label><input type="radio" name="sheaf_mode" value="single" checked> ' . esc_html__( 'Each file is one chapter', 'sheaf' ) . '</label><br>';
+		echo '<label><input type="radio" name="sheaf_mode" value="split"> ' . esc_html__( 'Split each file into chapters (a whole book in one file)', 'sheaf' ) . '</label>';
+		echo '<div id="sheaf-split-signals" style="margin:.6em 0 0 1.8em;display:none">';
+		echo '<p class="description" style="margin:.2em 0 .4em">' . esc_html__( 'Start a new chapter at each break you select:', 'sheaf' ) . '</p>';
+		$signal_labels = [
+			'page'     => __( 'Page break', 'sheaf' ),
+			'section'  => __( 'Section break (Word)', 'sheaf' ),
+			'heading1' => __( 'Heading 1', 'sheaf' ),
+			'heading2' => __( 'Heading 2', 'sheaf' ),
+			'heading3' => __( 'Heading 3', 'sheaf' ),
+			'symbols'  => __( 'A line of symbols only (e.g. •••, * * *)', 'sheaf' ),
+			'blanks'   => __( 'Three or more blank lines', 'sheaf' ),
+		];
+		foreach ( $signal_labels as $key => $label ) {
+			printf(
+				'<label style="display:block;margin:.15em 0"><input type="checkbox" name="sheaf_split[]" value="%1$s"%2$s> %3$s</label>',
+				esc_attr( $key ),
+				checked( 'page' === $key, true, false ),
+				esc_html( $label )
+			);
+		}
+		echo '<p class="description" style="margin:.4em 0 0">' . esc_html__( 'Multiple adjacent breaks will be consolidated. You will have a chance to review and adjust the results on the following page.', 'sheaf' ) . '</p>';
+		echo '</div>';
+		echo '</fieldset>';
+		echo '</td></tr>';
+
 		// Cleaning settings.
 		echo '<tr><th scope="row">' . esc_html__( 'Keep formatting', 'sheaf' ) . '</th><td>';
 		self::settings_fields( Import_Serializer::default_settings() );
 		echo '</td></tr>';
 
 		echo '</tbody></table>';
+		?>
+		<script>
+		( function () {
+			var box = document.getElementById( 'sheaf-split-signals' );
+			function sync() {
+				var m = document.querySelector( 'input[name="sheaf_mode"]:checked' );
+				if ( box ) { box.style.display = ( m && 'split' === m.value ) ? '' : 'none'; }
+			}
+			document.querySelectorAll( 'input[name="sheaf_mode"]' ).forEach( function ( r ) {
+				r.addEventListener( 'change', sync );
+			} );
+			sync();
+		} )();
+		</script>
+		<?php
 
 		submit_button( __( 'Upload and preview', 'sheaf' ) );
 		echo '</form>';
@@ -733,14 +800,22 @@ final class Import {
 			wp_die( esc_html__( 'You are not allowed to import chapters.', 'sheaf' ) );
 		}
 
+		// A whole-book file can be large: a couple of seconds and a few hundred MB
+		// to parse. Give the request room so a big upload doesn't time out or hit
+		// the memory ceiling.
+		wp_raise_memory_limit( 'admin' );
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 120 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort; may be disabled.
+		}
+
 		$book     = isset( $_POST['sheaf_book'] ) ? absint( $_POST['sheaf_book'] ) : 0;
 		$settings = self::settings_from_request( $book );
 		$files    = self::normalize_files();
+		list( $split, $signals ) = self::split_request();
 
 		$entries = [];
 		foreach ( $files as $file ) {
-			$entry = self::read_file( $file );
-			if ( null !== $entry ) {
+			foreach ( self::read_file( $file, $split, $signals ) as $entry ) {
 				$entries[] = $entry;
 			}
 		}
@@ -793,16 +868,45 @@ final class Import {
 	}
 
 	/**
-	 * Validate and parse one uploaded file into a preview entry.
+	 * The whole-book split request: whether to split, and which signals to split
+	 * on. Split is only on when the mode is "split" and at least one signal is
+	 * chosen (otherwise it falls back to one chapter per file).
+	 *
+	 * @return array{0:bool,1:array<string,bool>}
+	 */
+	private static function split_request(): array {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce checked in handle_upload.
+		$mode = isset( $_POST['sheaf_mode'] ) ? sanitize_key( wp_unslash( $_POST['sheaf_mode'] ) ) : 'single';
+		if ( 'split' !== $mode ) {
+			return [ false, [] ];
+		}
+		$signals = [];
+		if ( isset( $_POST['sheaf_split'] ) && is_array( $_POST['sheaf_split'] ) ) {
+			foreach ( wp_unslash( $_POST['sheaf_split'] ) as $s ) {
+				$s = sanitize_key( (string) $s );
+				if ( in_array( $s, Book_Splitter::SIGNALS, true ) ) {
+					$signals[ $s ] = true;
+				}
+			}
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		return [ ! empty( $signals ), $signals ];
+	}
+
+	/**
+	 * Validate and parse one uploaded file into preview entries. Normally one
+	 * entry per file; in split mode the file's chapters (Book_Splitter) each
+	 * become their own entry.
 	 *
 	 * @param array<string,mixed> $file
-	 * @return array<string,mixed>|null Null when the upload should be ignored.
+	 * @param array<string,bool>  $signals
+	 * @return array<int,array<string,mixed>> One or more entries (never empty).
 	 */
-	private static function read_file( array $file ): ?array {
+	private static function read_file( array $file, bool $split = false, array $signals = [] ): array {
 		$name = (string) $file['name'];
 		$ext  = strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
 
-		$entry = [
+		$base = [
 			'name'   => $name,
 			'title'  => self::title_from_filename( $name ),
 			'blocks' => [],
@@ -813,30 +917,73 @@ final class Import {
 		];
 
 		if ( 'docx' !== $ext ) {
-			$entry['error'] = __( 'Not a .docx Word file — skipped.', 'sheaf' );
-			return $entry;
+			$base['error'] = __( 'Not a .docx Word file — skipped.', 'sheaf' );
+			return [ $base ];
 		}
 		if ( $file['size'] > self::MAX_BYTES || ! is_uploaded_file( (string) $file['tmp'] ) ) {
-			$entry['error'] = __( 'File is too large or could not be read — skipped.', 'sheaf' );
-			return $entry;
+			$base['error'] = __( 'File is too large or could not be read — skipped.', 'sheaf' );
+			return [ $base ];
 		}
 
 		try {
-			$ir = Docx_Reader::read( (string) $file['tmp'] );
+			// In split mode keep the leading heading (each chapter finds its own
+			// title); otherwise let the reader promote it to the file's title.
+			$ir = Docx_Reader::read( (string) $file['tmp'], ! $split );
 		} catch ( \Throwable $e ) {
-			$entry['error'] = $e->getMessage();
-			return $entry;
+			$base['error'] = $e->getMessage();
+			return [ $base ];
 		}
 
-		$entry['blocks'] = $ir['blocks'];
-		$entry['styles'] = (array) ( $ir['styles'] ?? [] );
-		$entry['images'] = (int) $ir['images'];
-		$entry['tables'] = (int) $ir['tables'];
-		if ( '' !== trim( (string) $ir['title'] ) ) {
-			$entry['title'] = sanitize_text_field( $ir['title'] );
+		$styles = (array) ( $ir['styles'] ?? [] );
+
+		if ( ! $split ) {
+			$entry           = $base;
+			$entry['blocks'] = $ir['blocks'];
+			$entry['styles'] = $styles;
+			$entry['images'] = (int) $ir['images'];
+			$entry['tables'] = (int) $ir['tables'];
+			if ( '' !== trim( (string) $ir['title'] ) ) {
+				$entry['title'] = sanitize_text_field( $ir['title'] );
+			}
+			return [ $entry ];
 		}
 
-		return $entry;
+		// Split the file into chapters.
+		$chapters = Book_Splitter::split( $ir['blocks'], $signals );
+		if ( ! $chapters ) {
+			$base['error'] = __( 'No chapters were found with the chosen split points.', 'sheaf' );
+			return [ $base ];
+		}
+
+		$entries = [];
+		$n       = 0;
+		foreach ( $chapters as $chapter ) {
+			++$n;
+			$title = trim( (string) ( $chapter['title'] ?? '' ) );
+			if ( '' === $title ) {
+				$title = sprintf(
+					/* translators: 1: source file name, 2: chapter number. */
+					__( '%1$s — %2$d', 'sheaf' ),
+					self::title_from_filename( $name ),
+					$n
+				);
+			}
+			$entries[] = [
+				'name'   => $name,
+				'title'  => sanitize_text_field( $title ),
+				'blocks' => $chapter['blocks'],
+				'styles' => $styles,
+				'images' => 0,
+				'tables' => 0,
+				'error'  => '',
+			];
+		}
+		// Attribute the file's skipped-media counts to its first chapter, so the
+		// "images skipped" notice still surfaces once.
+		$entries[0]['images'] = (int) $ir['images'];
+		$entries[0]['tables'] = (int) $ir['tables'];
+
+		return $entries;
 	}
 
 	/**
@@ -1591,19 +1738,63 @@ final class Import {
 		return $created;
 	}
 
-	/* ---- Per-user transient session storage -------------------------------- */
+	/* ---- Per-user session storage ------------------------------------------ */
+
+	// The parsed preview data is held between the upload and create steps in a
+	// file, not a DB transient: a whole-book file's IR is tens of MB, which
+	// overruns MySQL's max_allowed_packet and silently fails to save as an option.
+	// It lives in a dedicated folder under wp-content/uploads — reliably writable
+	// and per-site on shared and load-balanced hosting alike — keyed by the
+	// high-entropy upload token, and swept by TTL on write and on an hourly cron.
+
+	/** The storage folder under uploads, created with web-deny guards on first use. */
+	private static function store_dir(): string {
+		$dir = self::store_dir_path();
+		if ( ! is_dir( $dir ) ) {
+			wp_mkdir_p( $dir );
+			// Block direct web access where the server honours these (Apache, and
+			// nginx via helpers). The token's entropy is the guard elsewhere, e.g.
+			// on Caddy, which ignores .htaccess.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort guard files.
+			@file_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort guard files.
+			@file_put_contents( $dir . '/index.html', '' );
+		}
+		return $dir;
+	}
+
+	/** The storage folder path (without creating it). */
+	private static function store_dir_path(): string {
+		return trailingslashit( wp_upload_dir()['basedir'] ) . self::STORE_DIR;
+	}
+
+	private static function store_path( string $token ): string {
+		return self::store_dir() . '/' . preg_replace( '/[^A-Za-z0-9]/', '', $token ) . '.dat';
+	}
 
 	private static function store( string $token, array $data ): void {
-		set_transient( self::TRANSIENT . $token, $data, self::TTL );
+		self::gc();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- large working blob, not a managed upload.
+		file_put_contents( self::store_path( $token ), serialize( $data ), LOCK_EX );
 	}
 
 	/**
-	 * Load a session, but only for the user who created it.
+	 * Load a session, but only for the user who created it and within its TTL.
 	 *
 	 * @return array<string,mixed>|null
 	 */
 	private static function load( string $token ): ?array {
-		$data = get_transient( self::TRANSIENT . $token );
+		$path = self::store_path( $token );
+		if ( ! is_file( $path ) ) {
+			return null;
+		}
+		if ( ( time() - (int) filemtime( $path ) ) > self::TTL ) {
+			self::forget( $token );
+			return null;
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents -- our own working file.
+		$raw  = (string) file_get_contents( $path );
+		$data = unserialize( $raw, [ 'allowed_classes' => false ] ); // Plain arrays only.
 		if ( ! is_array( $data ) || (int) ( $data['user'] ?? 0 ) !== get_current_user_id() ) {
 			return null;
 		}
@@ -1611,6 +1802,35 @@ final class Import {
 	}
 
 	private static function forget( string $token ): void {
-		delete_transient( self::TRANSIENT . $token );
+		$path = self::store_path( $token );
+		if ( is_file( $path ) ) {
+			wp_delete_file( $path );
+		}
+	}
+
+	/**
+	 * Ensure the hourly cleanup cron is scheduled (on admin loads).
+	 */
+	public static function schedule_gc(): void {
+		if ( ! wp_next_scheduled( 'sheaf_import_gc' ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'sheaf_import_gc' );
+		}
+	}
+
+	/**
+	 * Remove import sessions older than their TTL. Runs on each upload and on the
+	 * hourly sheaf_import_gc cron, so abandoned sessions never accumulate.
+	 */
+	public static function gc(): void {
+		$dir = self::store_dir_path();
+		if ( ! is_dir( $dir ) ) {
+			return;
+		}
+		$now = time();
+		foreach ( (array) glob( $dir . '/*.dat' ) as $file ) {
+			if ( ( $now - (int) filemtime( (string) $file ) ) > self::TTL ) {
+				wp_delete_file( (string) $file );
+			}
+		}
 	}
 }

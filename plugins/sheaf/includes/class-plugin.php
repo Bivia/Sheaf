@@ -56,6 +56,7 @@ final class Plugin {
 	}
 
 	public static function deactivate(): void {
+		wp_clear_scheduled_hook( 'sheaf_import_gc' );
 		flush_rewrite_rules();
 	}
 }

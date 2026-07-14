@@ -66,8 +66,8 @@ final class Style_Sets_Admin {
 			__( 'Style Sets', 'sheaf' ),
 			self::CAPABILITY,
 			self::PAGE,
-			[ self::class, 'render' ],
-			1 // Second item, right under "Books".
+			[ self::class, 'render' ]
+			// No explicit position: falls in registration order, after Chapters.
 		);
 	}
 
