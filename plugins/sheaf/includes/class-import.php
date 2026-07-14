@@ -40,6 +40,11 @@ final class Import {
 		add_filter( 'submenu_file', [ self::class, 'highlight_submenu' ] );
 		add_action( 'admin_head-edit.php', [ self::class, 'listing_button' ] );
 		add_action( 'admin_notices', [ self::class, 'imported_notice' ] );
+
+		// Sweep abandoned import sessions hourly (belt-and-suspenders alongside
+		// the sweep on each upload).
+		add_action( 'sheaf_import_gc', [ self::class, 'gc' ] );
+		add_action( 'admin_init', [ self::class, 'schedule_gc' ] );
 	}
 
 	/**
@@ -1718,23 +1723,40 @@ final class Import {
 	/* ---- Per-user session storage ------------------------------------------ */
 
 	// The parsed preview data is held between the upload and create steps in a
-	// temp file, not a DB transient: a whole-book file's IR is tens of MB, which
+	// file, not a DB transient: a whole-book file's IR is tens of MB, which
 	// overruns MySQL's max_allowed_packet and silently fails to save as an option.
-	// The file lives under the system temp dir (outside the web root) keyed by the
-	// high-entropy upload token.
+	// It lives in a dedicated folder under wp-content/uploads — reliably writable
+	// and per-site on shared and load-balanced hosting alike — keyed by the
+	// high-entropy upload token, and swept by TTL on write and on an hourly cron.
 
-	private static function store_path( string $token ): string {
-		$token = preg_replace( '/[^A-Za-z0-9]/', '', $token );
-		$dir   = rtrim( get_temp_dir(), '/\\' ) . '/' . self::STORE_DIR;
+	/** The storage folder under uploads, created with web-deny guards on first use. */
+	private static function store_dir(): string {
+		$dir = self::store_dir_path();
 		if ( ! is_dir( $dir ) ) {
 			wp_mkdir_p( $dir );
+			// Block direct web access where the server honours these (Apache, and
+			// nginx via helpers). The token's entropy is the guard elsewhere, e.g.
+			// on Caddy, which ignores .htaccess.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort guard files.
+			@file_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort guard files.
+			@file_put_contents( $dir . '/index.html', '' );
 		}
-		return $dir . '/' . $token . '.dat';
+		return $dir;
+	}
+
+	/** The storage folder path (without creating it). */
+	private static function store_dir_path(): string {
+		return trailingslashit( wp_upload_dir()['basedir'] ) . self::STORE_DIR;
+	}
+
+	private static function store_path( string $token ): string {
+		return self::store_dir() . '/' . preg_replace( '/[^A-Za-z0-9]/', '', $token ) . '.dat';
 	}
 
 	private static function store( string $token, array $data ): void {
 		self::gc();
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- large temp blob, not a managed upload.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- large working blob, not a managed upload.
 		file_put_contents( self::store_path( $token ), serialize( $data ), LOCK_EX );
 	}
 
@@ -1752,7 +1774,7 @@ final class Import {
 			self::forget( $token );
 			return null;
 		}
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents -- our own temp file.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents -- our own working file.
 		$raw  = (string) file_get_contents( $path );
 		$data = unserialize( $raw, [ 'allowed_classes' => false ] ); // Plain arrays only.
 		if ( ! is_array( $data ) || (int) ( $data['user'] ?? 0 ) !== get_current_user_id() ) {
@@ -1768,9 +1790,21 @@ final class Import {
 		}
 	}
 
-	/** Remove import sessions older than their TTL. */
-	private static function gc(): void {
-		$dir = rtrim( get_temp_dir(), '/\\' ) . '/' . self::STORE_DIR;
+	/**
+	 * Ensure the hourly cleanup cron is scheduled (on admin loads).
+	 */
+	public static function schedule_gc(): void {
+		if ( ! wp_next_scheduled( 'sheaf_import_gc' ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'sheaf_import_gc' );
+		}
+	}
+
+	/**
+	 * Remove import sessions older than their TTL. Runs on each upload and on the
+	 * hourly sheaf_import_gc cron, so abandoned sessions never accumulate.
+	 */
+	public static function gc(): void {
+		$dir = self::store_dir_path();
 		if ( ! is_dir( $dir ) ) {
 			return;
 		}
