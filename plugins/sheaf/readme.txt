@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -54,6 +54,25 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.9.0 =
+* Page Styles: each style set can now carry free-form CSS scoped to the books
+  that activate it, restyling every chapter wholesale — body font, paragraph
+  indent and spacing, chapter-title case, and so on — with nothing to apply by
+  hand. The Style Sets screen gains Editor Styles / Page Styles tabs, a
+  two-column editor with a live preview, and targeted blocks for per-scenario
+  styling; page styles also preview in the chapter editor. See docs/page-styles.md.
+* Whole-book import: import a whole book from a single Word (.docx) file and split
+  it into chapters at the breaks you choose — page breaks, Word section breaks,
+  Heading 1-3, a line of symbols (a scene-break glyph), or three or more blank
+  lines — with a preview to fix titles and drop front matter before creating the
+  drafts. See docs/whole-book-import.md.
+* The Sheafs menu now offers a single "Chapters" item — opening the chapter list,
+  where WordPress's bulk actions can publish many imported drafts at once — in
+  place of the separate "New Chapter" and "Import Chapters" items.
+* Faster, lighter Word import: the .docx reader parses large manuscripts several
+  times faster, and import sessions are stored outside the database so very large
+  books no longer fail to preview.
 
 = 0.8.0 =
 * Reorganised the per-book Book settings screen. Display settings now control
