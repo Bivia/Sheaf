@@ -106,6 +106,16 @@ final class Style_Sets_Admin {
 				],
 			]
 		);
+
+		// Tabs + the Page Styles editor (add/remove blocks, live iframe preview).
+		$pcss = SHEAF_DIR . 'assets/admin-page-styles.js';
+		wp_enqueue_script(
+			'sheaf-page-styles',
+			SHEAF_URL . 'assets/admin-page-styles.js',
+			[],
+			file_exists( $pcss ) ? (string) filemtime( $pcss ) : SHEAF_VERSION,
+			true
+		);
 	}
 
 	/**
@@ -230,13 +240,35 @@ final class Style_Sets_Admin {
 				Style_Sets::delete_style( $set, sanitize_key( wp_unslash( $_POST['style'] ?? '' ) ) );
 				$msg = 'style-deleted';
 				break;
+
+			case 'save_page_styles':
+				$raw    = isset( $_POST['blocks'] ) ? (array) wp_unslash( $_POST['blocks'] ) : [];
+				$blocks = [];
+				foreach ( $raw as $b ) {
+					if ( ! is_array( $b ) ) {
+						continue;
+					}
+					$blocks[] = [
+						'extra' => (string) ( $b['extra'] ?? '' ),
+						'css'   => (string) ( $b['css'] ?? '' ),
+					];
+				}
+				$warnings = Style_Sets::save_page_styles( $set, $blocks );
+				if ( $warnings ) {
+					set_transient( 'sheaf_pcss_warn_' . get_current_user_id(), $warnings, MINUTE_IN_SECONDS );
+				}
+				$msg = 'page-styles-saved';
+				break;
 		}
 
 		$args = [ 'sheaf_msg' => $msg ];
 		if ( '' !== $focus ) {
 			$args['set'] = $focus;
 		}
-		wp_safe_redirect( self::url( $args ) );
+		if ( 'save_page_styles' === $op ) {
+			$args['tab'] = 'page'; // Keep the author on the Page Styles tab after saving.
+		}
+		wp_safe_redirect( self::url( $args ) . '#sheaf-set-detail' );
 		exit;
 	}
 
@@ -251,14 +283,19 @@ final class Style_Sets_Admin {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only view state.
 		$selected   = sanitize_key( wp_unslash( $_GET['set'] ?? '' ) );
 		$edit_style = sanitize_key( wp_unslash( $_GET['edit_style'] ?? '' ) );
+		$tab        = sanitize_key( wp_unslash( $_GET['tab'] ?? '' ) );
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		if ( ! isset( $all[ $selected ] ) ) {
 			$selected = '';
 		}
+		// Editing a specific style always belongs to the Editor Styles tab.
+		if ( '' !== $edit_style ) {
+			$tab = '';
+		}
 
 		echo '<div class="wrap sheaf-style-sets">';
 		echo '<h1>' . esc_html__( 'Style Sets', 'sheaf' ) . '</h1>';
-		echo '<p class="description">' . esc_html__( 'Named font/formatting styles authors can apply to chapters. Activate a set on a Book to offer its styles when editing that book\'s chapters. Editing a style updates it everywhere it is used.', 'sheaf' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Named font/formatting styles authors can apply to chapters. Activate a set on a Book to apply its page styles to all that book\'s chapters, and to offer its inline and block styles when editing. Editing a style updates it everywhere it is used.', 'sheaf' ) . '</p>';
 
 		self::notice();
 		self::styles();
@@ -267,7 +304,7 @@ final class Style_Sets_Admin {
 		self::render_list( $all, $selected );
 
 		if ( '' !== $selected ) {
-			self::render_set_detail( $selected, (array) $all[ $selected ], $edit_style );
+			self::render_set_detail( $selected, (array) $all[ $selected ], $edit_style, $tab );
 		}
 
 		echo '</div>';
@@ -286,6 +323,7 @@ final class Style_Sets_Admin {
 		echo '<th>' . esc_html__( 'Name', 'sheaf' ) . '</th>';
 		echo '<th style="width:8em">' . esc_html__( 'Inline styles', 'sheaf' ) . '</th>';
 		echo '<th style="width:8em">' . esc_html__( 'Block styles', 'sheaf' ) . '</th>';
+		echo '<th style="width:8em">' . esc_html__( 'Page styles', 'sheaf' ) . '</th>';
 		echo '<th>' . esc_html__( 'Available in', 'sheaf' ) . '</th>';
 		echo '</tr></thead><tbody>';
 
@@ -294,16 +332,19 @@ final class Style_Sets_Admin {
 			$label  = '' !== (string) ( $set['label'] ?? '' ) ? (string) $set['label'] : (string) $slug;
 			$row    = ( $slug === $selected ) ? ' class="sheaf-set-current"' : '';
 
+			$has_page = count( Style_Sets::get_page_styles( (string) $slug ) ) > 0;
+
 			echo '<tr' . $row . '>'; // Class is a fixed literal.
 			self::name_cell( (string) $slug, $label );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $counts['inline'] ) ) );
 			printf( '<td>%s</td>', esc_html( number_format_i18n( $counts['block'] ) ) );
+			printf( '<td>%s</td>', esc_html( $has_page ? __( 'Yes', 'sheaf' ) : __( 'No', 'sheaf' ) ) );
 			echo '<td>' . self::available_in( (string) $slug ) . '</td>'; // Links built/escaped within.
 			echo '</tr>';
 		}
 
 		// Final row: create a new set (the only row when none exist yet).
-		echo '<tr class="sheaf-add-row"><td colspan="4">';
+		echo '<tr class="sheaf-add-row"><td colspan="5">';
 		self::open_form();
 		echo '<input type="hidden" name="op" value="save_set">';
 		echo '<input type="text" name="label" required class="regular-text" placeholder="' . esc_attr__( 'e.g. Strange Voices', 'sheaf' ) . '"> ';
@@ -462,9 +503,10 @@ final class Style_Sets_Admin {
 	 *
 	 * @param array<string,mixed> $set
 	 */
-	private static function render_set_detail( string $slug, array $set, string $edit_style ): void {
+	private static function render_set_detail( string $slug, array $set, string $edit_style, string $tab = '' ): void {
 		$styles = (array) ( $set['styles'] ?? [] );
 		$books  = Style_Sets::books_using( $slug );
+		$on_page = ( 'page' === $tab ); // Which tab opens active.
 
 		echo '<hr><div class="sheaf-set" id="sheaf-set-detail">';
 		echo '<h2>' . esc_html( '' !== (string) ( $set['label'] ?? '' ) ? (string) $set['label'] : $slug ) . ' <code>' . esc_html( $slug ) . '</code></h2>';
@@ -481,16 +523,156 @@ final class Style_Sets_Admin {
 			echo '<p class="description">' . esc_html__( 'Not active on any book yet.', 'sheaf' ) . '</p>';
 		}
 
+		// Tabs: Editor Styles (the named inline/block menus) and Page Styles (the
+		// scoped CSS that restyles whole chapters). Editor is active by default.
+		echo '<div class="sheaf-tabs" role="tablist">';
+		self::tab_button( 'editor', __( 'Editor Styles', 'sheaf' ), ! $on_page );
+		self::tab_button( 'page', __( 'Page Styles', 'sheaf' ), $on_page );
+		echo '</div>';
+
+		// Editor Styles panel.
+		printf( '<div class="sheaf-tabpanel" id="sheaf-tab-editor" role="tabpanel" aria-labelledby="sheaf-tabbtn-editor"%s>', $on_page ? ' hidden' : '' );
+		echo '<p class="description">' . esc_html__( 'Editor Styles provide semantic menu options for styles that you can apply to words, sentences, or whole paragraphs when editing the chapter.', 'sheaf' ) . '</p>';
 		self::render_styles_table( $slug, $styles, 'inline', $edit_style );
 		self::render_styles_table( $slug, $styles, 'block', $edit_style );
-
-		// Add-a-style form (unless we're editing one in this set). Rename/delete
-		// live in the list's row actions now.
 		if ( '' === $edit_style ) {
 			echo '<hr>';
 			echo '<h3>' . esc_html__( 'Add a style', 'sheaf' ) . '</h3>';
 			self::render_style_form( $slug );
 		}
+		echo '</div>';
+
+		// Page Styles panel.
+		printf( '<div class="sheaf-tabpanel" id="sheaf-tab-page" role="tabpanel" aria-labelledby="sheaf-tabbtn-page"%s>', $on_page ? '' : ' hidden' );
+		echo '<p class="description">' . esc_html__( 'Page Styles are applied to all chapters in books with this style set, based on the CSS selectors you write.', 'sheaf' ) . '</p>';
+		self::render_page_styles_form( $slug );
+		echo '</div>';
+
+		echo '</div>';
+	}
+
+	/** One tab button in the set-detail tablist. */
+	private static function tab_button( string $key, string $label, bool $active ): void {
+		printf(
+			'<button type="button" class="sheaf-tab%1$s" id="sheaf-tabbtn-%2$s" role="tab" aria-controls="sheaf-tab-%2$s" aria-selected="%3$s" data-target="sheaf-tab-%2$s">%4$s</button>',
+			$active ? ' is-active' : '',
+			esc_attr( $key ),
+			$active ? 'true' : 'false',
+			esc_html( $label )
+		);
+	}
+
+	/**
+	 * The Page Styles editor: a base CSS block scoped to the set's body class, any
+	 * number of additional targeted blocks (each chaining extra classes onto that
+	 * selector), and a live iframe preview. Saves via the standard library POST.
+	 */
+	private static function render_page_styles_form( string $slug ): void {
+		$blocks     = Style_Sets::get_page_styles( $slug );
+		$body_class = Style_Sets::styleset_body_class( $slug );
+
+		// Split the stored blocks into the single base block and the additional
+		// targeted ones. First empty-selector block is the base.
+		$base       = '';
+		$have_base  = false;
+		$additional = [];
+		foreach ( $blocks as $b ) {
+			if ( '' === $b['extra'] && ! $have_base ) {
+				$base      = $b['css'];
+				$have_base = true;
+			} else {
+				$additional[] = $b;
+			}
+		}
+
+		self::open_form();
+		echo '<input type="hidden" name="op" value="save_page_styles">';
+		echo '<input type="hidden" name="set" value="' . esc_attr( $slug ) . '">';
+
+		printf( '<div class="sheaf-page-styles" data-body-class="%s">', esc_attr( $body_class ) );
+
+		// Two columns: the editable blocks on the left, the live preview on the
+		// right (sticky, so it stays in view while the block list scrolls).
+		echo '<div class="sheaf-pcss-cols">';
+
+		echo '<div class="sheaf-pcss-editor">';
+
+		// Base block (index 0, always present, never removable).
+		self::pcss_block( $body_class, 0, '', $base, false );
+
+		// Additional targeted blocks.
+		echo '<div class="sheaf-pcss-additional">';
+		$i = 1;
+		foreach ( $additional as $b ) {
+			self::pcss_block( $body_class, $i, $b['extra'], $b['css'], true );
+			++$i;
+		}
+		echo '</div>';
+
+		echo '<p><button type="button" class="button sheaf-pcss-add">' . esc_html__( 'Add Additional Targeted Block', 'sheaf' ) . '</button></p>';
+
+		// Template for JS-added blocks: "__i__" is replaced with a fresh index.
+		echo '<template class="sheaf-pcss-template">';
+		self::pcss_block( $body_class, '__i__', '', '', true );
+		echo '</template>';
+
+		echo '</div>'; // .sheaf-pcss-editor
+
+		// Live preview.
+		echo '<div class="sheaf-pcss-preview">';
+		echo '<p class="description">' . esc_html__( 'Live preview', 'sheaf' ) . '</p>';
+		echo '<iframe class="sheaf-pcss-frame" title="' . esc_attr__( 'Page styles preview', 'sheaf' ) . '" sandbox=""></iframe>';
+		echo '</div>';
+
+		echo '</div>'; // .sheaf-pcss-cols
+		echo '</div>'; // .sheaf-page-styles
+
+		submit_button( __( 'Save page styles', 'sheaf' ), 'primary', '', false );
+		echo '</form>';
+	}
+
+	/**
+	 * One page-styles block: the scoping selector (fixed body class, plus an
+	 * editable extra-class field for additional blocks), a CSS textarea, and the
+	 * closing brace. $index feeds the blocks[$index][…] field names; the base
+	 * block passes $removable = false and no extra field.
+	 *
+	 * @param int|string $index Numeric index, or "__i__" for the JS template.
+	 */
+	private static function pcss_block( string $body_class, $index, string $extra, string $css, bool $removable ): void {
+		$name = 'blocks[' . $index . ']';
+
+		echo '<div class="sheaf-pcss-block' . ( $removable ? ' sheaf-pcss-extra' : ' sheaf-pcss-base' ) . '">';
+
+		echo '<div class="sheaf-pcss-selector">';
+		echo '<code>body.' . esc_html( $body_class ) . '</code>';
+		if ( $removable ) {
+			echo '<code>.</code>';
+			echo '<input type="text" class="sheaf-pcss-extra-input" name="' . esc_attr( $name ) . '[extra]" value="' . esc_attr( $extra ) . '"'
+				. ' pattern="([A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*)?"'
+				. ' placeholder="' . esc_attr__( 'e.g. sheaf-section', 'sheaf' ) . '"'
+				. ' title="' . esc_attr__( 'One or more classes, dot-separated (e.g. sheaf-book-114.sheaf-section). Use Remove to delete this block.', 'sheaf' ) . '">';
+		} else {
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '[extra]" value="">';
+		}
+		echo ' <span class="sheaf-pcss-brace">{</span>';
+		echo '</div>';
+
+		echo '<textarea class="sheaf-pcss-css" name="' . esc_attr( $name ) . '[css]" rows="5" spellcheck="false" placeholder="' . esc_attr__( 'e.g. .entry-content p { margin: 0; text-indent: 2.5em; }', 'sheaf' ) . '">' . esc_textarea( $css ) . '</textarea>';
+
+		echo '<div class="sheaf-pcss-close"><span class="sheaf-pcss-brace">}</span>';
+		// Preview-only toggle (no name, so it is never submitted): whether this
+		// block's classes join the live-preview body, so each targeted scenario can
+		// be viewed in isolation. The base block always shows.
+		if ( $removable ) {
+			echo '<label class="sheaf-pcss-show-label"><input type="checkbox" class="sheaf-pcss-show"> ' . esc_html__( 'Show in preview', 'sheaf' ) . '</label>';
+		} else {
+			echo '<span class="sheaf-pcss-show-label sheaf-pcss-always">' . esc_html__( 'always shown', 'sheaf' ) . '</span>';
+		}
+		if ( $removable ) {
+			echo '<button type="button" class="button-link sheaf-pcss-remove" aria-label="' . esc_attr__( 'Remove this block', 'sheaf' ) . '">' . esc_html__( 'Remove', 'sheaf' ) . '</button>';
+		}
+		echo '</div>';
 
 		echo '</div>';
 	}
@@ -740,9 +922,22 @@ final class Style_Sets_Admin {
 			'style-created' => __( 'Style added.', 'sheaf' ),
 			'style-saved'   => __( 'Style saved.', 'sheaf' ),
 			'style-deleted' => __( 'Style deleted.', 'sheaf' ),
+			'page-styles-saved' => __( 'Page styles saved.', 'sheaf' ),
 		];
 		if ( isset( $map[ $msg ] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $map[ $msg ] ) . '</p></div>';
+		}
+
+		// Cleaning warnings from the last page-styles save (invalid selectors,
+		// dropped at-rules, unbalanced braces), handed over via a short transient.
+		$warn = get_transient( 'sheaf_pcss_warn_' . get_current_user_id() );
+		if ( is_array( $warn ) && $warn ) {
+			delete_transient( 'sheaf_pcss_warn_' . get_current_user_id() );
+			echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html__( 'Page styles saved, with adjustments:', 'sheaf' ) . '</p><ul style="list-style:disc;margin-left:2em">';
+			foreach ( $warn as $line ) {
+				echo '<li>' . esc_html( (string) $line ) . '</li>';
+			}
+			echo '</ul></div>';
 		}
 	}
 
@@ -779,6 +974,27 @@ final class Style_Sets_Admin {
 			.sheaf-prev{max-width:40em;margin:0}
 			.sheaf-prev-actual{margin:0}
 			.sheaf-prev-rep{margin:0;height:1.1em;border-radius:2px;background:repeating-linear-gradient(45deg,#f6f7f7,#f6f7f7 6px,#eceef0 6px,#eceef0 12px)}
+			.sheaf-tabs{display:flex;gap:.25em;margin:1em 0 0;border-bottom:1px solid #c3c4c7}
+			.sheaf-tab{border:1px solid transparent;border-bottom:0;background:none;padding:.5em 1em;cursor:pointer;font-size:14px;color:#2271b1;margin-bottom:-1px}
+			.sheaf-tab.is-active{background:#fff;border-color:#c3c4c7;color:#1d2327;font-weight:600;border-radius:4px 4px 0 0}
+			.sheaf-tabpanel{padding-top:1em}
+			.sheaf-pcss-cols{display:flex;gap:1.4em;align-items:flex-start}
+			.sheaf-pcss-editor{flex:1 1 40%;min-width:0}
+			.sheaf-pcss-block{font-family:Menlo,Consolas,monospace;font-size:13px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:.6em .9em;margin:.6em 0}
+			.sheaf-pcss-selector{color:#2271b1;display:flex;align-items:center;gap:.3em;flex-wrap:wrap}
+			.sheaf-pcss-selector code{background:none;padding:0;color:inherit}
+			.sheaf-pcss-brace{color:#2271b1}
+			.sheaf-pcss-show-label{margin-right:auto;font-family:sans-serif;font-size:12px;color:#50575e;white-space:nowrap;display:inline-flex;align-items:center;gap:.3em}
+			.sheaf-pcss-always{font-style:italic;color:#8c8f94}
+			.sheaf-pcss-extra-input{font-family:inherit;font-size:13px;min-width:14em}
+			.sheaf-pcss-extra-input:invalid{border-color:#b32d2e;background:#fcf0f1}
+			.sheaf-pcss-css{display:block;width:100%;margin:.4em 0;font-family:inherit;font-size:13px;box-sizing:border-box}
+			.sheaf-pcss-close{color:#2271b1;display:flex;align-items:center;gap:.6em}
+			.sheaf-pcss-remove{color:#b32d2e;font-family:sans-serif}
+			.sheaf-pcss-preview{flex:1 1 60%;min-width:0;position:sticky;top:46px;margin:0;padding:.6em .8em;border:1px solid #dcdcde;border-radius:4px;background:#fff}
+			.sheaf-pcss-preview>.description{margin:0 0 .4em}
+			.sheaf-pcss-frame{width:100%;height:70vh;min-height:20em;border:1px solid #dcdcde;border-radius:3px;background:#fff}
+			@media (max-width:960px){.sheaf-pcss-cols{flex-direction:column}.sheaf-pcss-preview{position:static;width:100%}}
 		</style>';
 	}
 }
