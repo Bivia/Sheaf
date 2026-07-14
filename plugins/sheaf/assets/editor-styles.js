@@ -123,4 +123,74 @@
 			}
 		} );
 	} );
+
+	// Page-styles preview: the canvas CSS is injected server-side (scoped to each
+	// set's "sheaf-styleset-<slug>" body class), but the editor canvas lacks both
+	// that class and the front-end ".entry-content" wrapper. Stamp them on so the
+	// scoped rules bite in the editor as they do on the front end. The canvas
+	// mounts asynchronously and re-renders, so re-apply during load and then watch
+	// for structural changes.
+	wp.domReady( function () {
+		var bodyClasses = ( data.bodyClasses || [] ).filter( Boolean );
+		if ( ! bodyClasses.length ) {
+			return;
+		}
+
+		function canvasDoc() {
+			var iframe = document.querySelector( 'iframe[name="editor-canvas"]' );
+			if ( iframe && iframe.contentDocument && iframe.contentDocument.body ) {
+				return iframe.contentDocument;
+			}
+			return document; // non-iframed editor fallback
+		}
+
+		function apply() {
+			var doc = canvasDoc();
+			if ( ! doc || ! doc.body ) {
+				return;
+			}
+			bodyClasses.forEach( function ( c ) {
+				doc.body.classList.add( c );
+			} );
+			var root =
+				doc.querySelector( '.is-root-container' ) ||
+				doc.querySelector( '.wp-block-post-content' ) ||
+				doc.querySelector( '.editor-styles-wrapper' );
+			if ( root ) {
+				root.classList.add( 'entry-content' );
+			}
+		}
+
+		apply();
+
+		// Re-apply through the first ~10s of load/re-render churn.
+		var ticks = 0;
+		var timer = setInterval( function () {
+			apply();
+			if ( ++ticks >= 20 ) {
+				clearInterval( timer );
+				watch();
+			}
+		}, 500 );
+
+		// After that, re-apply on structural changes (blocks added/removed).
+		function watch() {
+			var doc = canvasDoc();
+			if ( ! doc || ! doc.body || typeof MutationObserver === 'undefined' ) {
+				return;
+			}
+			var pending = false;
+			var obs = new MutationObserver( function () {
+				if ( pending ) {
+					return;
+				}
+				pending = true;
+				window.requestAnimationFrame( function () {
+					pending = false;
+					apply();
+				} );
+			} );
+			obs.observe( doc.body, { childList: true, subtree: true } );
+		}
+	} );
 } )( window.wp );
