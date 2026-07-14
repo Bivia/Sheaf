@@ -777,6 +777,14 @@ final class Import {
 			wp_die( esc_html__( 'You are not allowed to import chapters.', 'sheaf' ) );
 		}
 
+		// A whole-book file can be large: a couple of seconds and a few hundred MB
+		// to parse. Give the request room so a big upload doesn't time out or hit
+		// the memory ceiling.
+		wp_raise_memory_limit( 'admin' );
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 120 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort; may be disabled.
+		}
+
 		$book     = isset( $_POST['sheaf_book'] ) ? absint( $_POST['sheaf_book'] ) : 0;
 		$settings = self::settings_from_request( $book );
 		$files    = self::normalize_files();
