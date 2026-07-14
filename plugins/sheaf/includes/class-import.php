@@ -25,7 +25,7 @@ final class Import {
 	private const PAGE        = 'sheaf-import';
 	private const NONCE_UP    = 'sheaf_import_upload';
 	private const NONCE_CREATE = 'sheaf_import_create';
-	private const TRANSIENT   = 'sheaf_import_';
+	private const STORE_DIR   = 'sheaf-import';
 	private const TTL         = HOUR_IN_SECONDS;
 	private const MAX_BYTES   = 26214400; // 25 MB per file.
 
@@ -198,7 +198,7 @@ final class Import {
 				esc_html( $label )
 			);
 		}
-		echo '<p class="description" style="margin:.4em 0 0">' . esc_html__( 'Consecutive breaks (say a page break then a heading) count as one. Anything before the first break becomes the first chapter, which you can delete.', 'sheaf' ) . '</p>';
+		echo '<p class="description" style="margin:.4em 0 0">' . esc_html__( 'Multiple adjacent breaks will be consolidated. You will have a chance to review and adjust the results on the following page.', 'sheaf' ) . '</p>';
 		echo '</div>';
 		echo '</fieldset>';
 		echo '</td></tr>';
@@ -1715,19 +1715,46 @@ final class Import {
 		return $created;
 	}
 
-	/* ---- Per-user transient session storage -------------------------------- */
+	/* ---- Per-user session storage ------------------------------------------ */
+
+	// The parsed preview data is held between the upload and create steps in a
+	// temp file, not a DB transient: a whole-book file's IR is tens of MB, which
+	// overruns MySQL's max_allowed_packet and silently fails to save as an option.
+	// The file lives under the system temp dir (outside the web root) keyed by the
+	// high-entropy upload token.
+
+	private static function store_path( string $token ): string {
+		$token = preg_replace( '/[^A-Za-z0-9]/', '', $token );
+		$dir   = rtrim( get_temp_dir(), '/\\' ) . '/' . self::STORE_DIR;
+		if ( ! is_dir( $dir ) ) {
+			wp_mkdir_p( $dir );
+		}
+		return $dir . '/' . $token . '.dat';
+	}
 
 	private static function store( string $token, array $data ): void {
-		set_transient( self::TRANSIENT . $token, $data, self::TTL );
+		self::gc();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- large temp blob, not a managed upload.
+		file_put_contents( self::store_path( $token ), serialize( $data ), LOCK_EX );
 	}
 
 	/**
-	 * Load a session, but only for the user who created it.
+	 * Load a session, but only for the user who created it and within its TTL.
 	 *
 	 * @return array<string,mixed>|null
 	 */
 	private static function load( string $token ): ?array {
-		$data = get_transient( self::TRANSIENT . $token );
+		$path = self::store_path( $token );
+		if ( ! is_file( $path ) ) {
+			return null;
+		}
+		if ( ( time() - (int) filemtime( $path ) ) > self::TTL ) {
+			self::forget( $token );
+			return null;
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents -- our own temp file.
+		$raw  = (string) file_get_contents( $path );
+		$data = unserialize( $raw, [ 'allowed_classes' => false ] ); // Plain arrays only.
 		if ( ! is_array( $data ) || (int) ( $data['user'] ?? 0 ) !== get_current_user_id() ) {
 			return null;
 		}
@@ -1735,6 +1762,23 @@ final class Import {
 	}
 
 	private static function forget( string $token ): void {
-		delete_transient( self::TRANSIENT . $token );
+		$path = self::store_path( $token );
+		if ( is_file( $path ) ) {
+			wp_delete_file( $path );
+		}
+	}
+
+	/** Remove import sessions older than their TTL. */
+	private static function gc(): void {
+		$dir = rtrim( get_temp_dir(), '/\\' ) . '/' . self::STORE_DIR;
+		if ( ! is_dir( $dir ) ) {
+			return;
+		}
+		$now = time();
+		foreach ( (array) glob( $dir . '/*.dat' ) as $file ) {
+			if ( ( $now - (int) filemtime( (string) $file ) ) > self::TTL ) {
+				wp_delete_file( (string) $file );
+			}
+		}
 	}
 }
