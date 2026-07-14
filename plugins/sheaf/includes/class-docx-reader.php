@@ -20,6 +20,8 @@
  *     'direct'  => array,  // ad-hoc paragraph formatting (align/indent/spacing)
  *     'runs'    => run[],   // paragraph/heading/quote
  *     'items'   => run[][], // list: one run-array per item
+ *     'breaks'  => array,   // {page:bool,section:bool,blanks:int} signals before
+ *                           // this block, for the whole-book chapter splitter
  *   ]
  *   run = [ 'text'=>string, 'bold'=>bool, 'italic'=>bool, 'underline'=>bool,
  *           'href'=>string, 'style'=>string, 'direct'=>array ]
@@ -64,11 +66,11 @@ final class Docx_Reader {
 	 * @return array{title:string,blocks:array,images:int,tables:int,styles:array}
 	 * @throws \RuntimeException When the file cannot be read or parsed.
 	 */
-	public static function read( string $path ): array {
-		return ( new self() )->parse( $path );
+	public static function read( string $path, bool $extract_title = true ): array {
+		return ( new self() )->parse( $path, $extract_title );
 	}
 
-	private function parse( string $path ): array {
+	private function parse( string $path, bool $extract_title = true ): array {
 		if ( ! class_exists( '\ZipArchive' ) ) {
 			throw new \RuntimeException( __( 'PHP ZipArchive is not available, so .docx files cannot be read on this server.', 'sheaf' ) );
 		}
@@ -96,7 +98,7 @@ final class Docx_Reader {
 		$this->bullet_lists  = $this->parse_numbering( (string) $numbering );
 		$this->styles        = $this->parse_styles( (string) $styles );
 
-		$blocks = $this->parse_document( $document );
+		$blocks = $this->parse_document( $document, $extract_title );
 
 		return [
 			'title'  => $this->title,
@@ -227,8 +229,19 @@ final class Docx_Reader {
 
 	/**
 	 * Walk the document body into IR blocks.
+	 *
+	 * Each emitted block also carries a 'breaks' annotation describing the
+	 * structural signals that occurred *before* it — a page break, a Word section
+	 * break, and how many blank paragraphs preceded it. Word drops these from the
+	 * visible IR (blank paragraphs and page breaks would otherwise vanish), but
+	 * they are exactly what the whole-book splitter needs to find chapter
+	 * boundaries. The annotation is inert for the one-file-one-chapter path.
+	 *
+	 * @param bool $extract_title Promote a leading heading to the chapter title
+	 *                            and remove it (the one-chapter behaviour). Split
+	 *                            mode passes false so each chapter keeps its own.
 	 */
-	private function parse_document( string $xml ): array {
+	private function parse_document( string $xml, bool $extract_title = true ): array {
 		$dom = $this->load_xml( $xml );
 		if ( ! $dom ) {
 			throw new \RuntimeException( __( 'The Word document could not be parsed.', 'sheaf' ) );
@@ -244,6 +257,13 @@ final class Docx_Reader {
 
 		$blocks      = [];
 		$list_buffer = null; // Accumulates consecutive list items into one block.
+		// Structural signals seen since the last emitted block, attached to the
+		// next one as its 'breaks'.
+		$pending = [
+			'page'    => false,
+			'section' => false,
+			'blanks'  => 0,
+		];
 
 		foreach ( $body->childNodes as $node ) {
 			if ( ! $node instanceof \DOMElement ) {
@@ -264,20 +284,32 @@ final class Docx_Reader {
 			$this->count_media( $xpath, $node );
 			$runs = $this->parse_runs( $xpath, $node );
 
+			// Structural signals for splitting: a page break before/in this
+			// paragraph, and a paragraph-level section break (which ends a section
+			// after this paragraph, so it applies to the *next* block).
+			$page_here = $this->has_page_break_before( $xpath, $node )
+				|| null !== $xpath->query( './/w:br[@w:type="page"]', $node )->item( 0 );
+			$sect_here = null !== $xpath->query( 'w:pPr/w:sectPr', $node )->item( 0 );
+
 			// A list item: buffer it so consecutive items become one list block.
 			$num_id = $this->attr( $xpath, $node, 'w:pPr/w:numPr/w:numId/@w:val' );
 			if ( '' !== $num_id ) {
 				$ordered = ! ( $this->bullet_lists[ $num_id ] ?? false );
 				if ( null === $list_buffer || $list_buffer['ordered'] !== $ordered ) {
-					$blocks      = $this->flush_list( $blocks, $list_buffer );
-					$list_buffer = [
+					$blocks       = $this->flush_list( $blocks, $list_buffer );
+					$list_buffer  = [
 						'type'    => 'list',
 						'ordered' => $ordered,
 						'style'   => '',
 						'items'   => [],
+						'breaks'  => $this->breaks_before( $pending, $page_here ),
 					];
+					$pending = [ 'page' => false, 'section' => false, 'blanks' => 0 ];
 				}
 				$list_buffer['items'][] = $runs;
+				if ( $sect_here ) {
+					$pending['section'] = true;
+				}
 				continue;
 			}
 
@@ -286,14 +318,60 @@ final class Docx_Reader {
 			$list_buffer = null;
 
 			$block = $this->paragraph_block( $xpath, $node, $runs );
-			if ( null !== $block ) {
-				$blocks[] = $block;
+			if ( null === $block ) {
+				// An empty paragraph: not emitted, but it carries split signals.
+				if ( $page_here ) {
+					$pending['page'] = true;
+				} elseif ( ! $sect_here ) {
+					++$pending['blanks']; // A plain blank line.
+				}
+				if ( $sect_here ) {
+					$pending['section'] = true;
+				}
+				continue;
 			}
+
+			$block['breaks'] = $this->breaks_before( $pending, $page_here );
+			$pending         = [ 'page' => false, 'section' => false, 'blanks' => 0 ];
+			if ( $sect_here ) {
+				$pending['section'] = true; // Section break after this paragraph.
+			}
+			$blocks[] = $block;
 		}
 
 		$blocks = $this->flush_list( $blocks, $list_buffer );
 
-		return $this->extract_title( $blocks );
+		return $extract_title ? $this->extract_title( $blocks ) : array_values( $blocks );
+	}
+
+	/**
+	 * The 'breaks' annotation for a block: the pending signals plus any page break
+	 * that belongs to this paragraph itself.
+	 *
+	 * @param array{page:bool,section:bool,blanks:int} $pending
+	 * @return array{page:bool,section:bool,blanks:int}
+	 */
+	private function breaks_before( array $pending, bool $page_here ): array {
+		return [
+			'page'    => $pending['page'] || $page_here,
+			'section' => $pending['section'],
+			'blanks'  => $pending['blanks'],
+		];
+	}
+
+	/**
+	 * Whether a paragraph carries w:pageBreakBefore (present-but-no-value = on).
+	 */
+	private function has_page_break_before( \DOMXPath $xpath, \DOMElement $p ): bool {
+		$node = $xpath->query( 'w:pPr/w:pageBreakBefore', $p )->item( 0 );
+		if ( ! $node instanceof \DOMElement ) {
+			return false;
+		}
+		$val = $node->getAttributeNS( self::NS_W, 'val' );
+		if ( '' === $val ) {
+			return true;
+		}
+		return ! in_array( strtolower( $val ), [ '0', 'false', 'off' ], true );
 	}
 
 	/**
