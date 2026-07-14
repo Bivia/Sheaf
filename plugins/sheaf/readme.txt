@@ -35,6 +35,12 @@ Display (all opt-in except the chapter breadcrumb)
   (top / bottom / both / none) and how its chapter navigation looks (back-to-book,
   previous/next, chapter titles, or a full-contents drop-down). Both remain
   filterable via `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
+* Style Sets — reusable styling activated per book. Editor Styles are named
+  inline/paragraph styles an author applies while writing; Page Styles are CSS
+  scoped to a book's chapters that restyle them wholesale (body font, paragraph
+  indent and spacing, chapter-title case, and so on) with nothing to apply by
+  hand. Activate a set on a Book to style that book's chapters. See
+  docs/page-styles.md.
 
 == Roadmap ==
 * Addressable text versions that comments can reference and link to.
