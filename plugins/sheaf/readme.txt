@@ -41,6 +41,9 @@ Display (all opt-in except the chapter breadcrumb)
   indent and spacing, chapter-title case, and so on) with nothing to apply by
   hand. Activate a set on a Book to style that book's chapters. See
   docs/page-styles.md.
+* Import — bring chapters in from Word (.docx): one file per chapter, or split a
+  whole-book file into chapters at page breaks, section breaks, headings, a line
+  of symbols (a scene-break glyph), or blank gaps. See docs/whole-book-import.md.
 
 == Roadmap ==
 * Addressable text versions that comments can reference and link to.
