@@ -173,6 +173,36 @@ try {
 	$ch = Book_Splitter::split( [ $H( 'Ch1', 2, [] ), $P( 'body' ) ], $sig( [ 'heading1' ] ) );
 	$check( 1 === count( $ch ) && 'Ch1' === $title( $ch, 0 ) && 1 === count( $ch[0]['blocks'] ), 'split: leading heading → single chapter, no empty front matter' );
 
+	/* --------------------------- Docx_Reader: run marks + direct props ---- */
+	// Guards the reader's per-run/paragraph parsing (the hot path optimised for
+	// large documents): the exact marks and CSS props must be unchanged.
+
+	$rich = '<w:p>'
+		. '<w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r>'
+		. '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> italic</w:t></w:r>'
+		. '<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve"> under</w:t></w:r>'
+		. '<w:r><w:rPr><w:color w:val="FF0000"/><w:rFonts w:ascii="Georgia"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve"> red</w:t></w:r>'
+		. '</w:p>';
+	$aligned = '<w:p><w:pPr><w:jc w:val="center"/><w:ind w:left="720" w:firstLine="360"/></w:pPr><w:r><w:t>Centered indented</w:t></w:r></w:p>';
+
+	$path2  = $make_docx( $rich . $aligned );
+	$tmp[]  = $path2;
+	$blocks2 = Docx_Reader::read( $path2, false )['blocks'];
+	$rblock = $blocks2[0];
+	$rruns  = $rblock['runs'];
+
+	$check( true === ( $rruns[0]['bold'] ?? false ), 'reader: bold run' );
+	$check( true === ( $rruns[1]['italic'] ?? false ), 'reader: italic run' );
+	$check( true === ( $rruns[2]['underline'] ?? false ), 'reader: underline run' );
+	$check( '#ff0000' === ( $rruns[3]['direct']['color'] ?? '' ), 'reader: run colour' );
+	$check( 'Georgia' === ( $rruns[3]['direct']['font-family'] ?? '' ), 'reader: run font-family' );
+	$check( '14pt' === ( $rruns[3]['direct']['font-size'] ?? '' ), 'reader: run font-size (half-points)' );
+
+	$ablock = $blocks2[1];
+	$check( 'center' === ( $ablock['direct']['text-align'] ?? '' ), 'reader: paragraph alignment' );
+	$check( '36pt' === ( $ablock['direct']['margin-left'] ?? '' ), 'reader: paragraph indent (twips→pt)' );
+	$check( '18pt' === ( $ablock['direct']['text-indent'] ?? '' ), 'reader: paragraph first-line indent' );
+
 } finally {
 	foreach ( $tmp as $p ) {
 		@unlink( $p );
