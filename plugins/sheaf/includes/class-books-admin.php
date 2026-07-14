@@ -45,7 +45,7 @@ final class Books_Admin {
 	}
 
 	/**
-	 * Register the "Sheafs" top-level menu: Books, Chapters, New Chapter.
+	 * Register the "Sheafs" top-level menu: Books, Chapters.
 	 */
 	public static function add_page(): void {
 		self::$hook = (string) add_menu_page(
@@ -68,14 +68,15 @@ final class Books_Admin {
 			self::PAGE,
 			[ self::class, 'render' ]
 		);
-		// No standalone "Chapters" link: chapters are only meaningful inside a
-		// book, so they are managed from each book's screen instead.
+		// A "Chapters" link to the native chapter list — where authors manage all
+		// chapters, including bulk actions like publishing many imported drafts at
+		// once. "Add New" and "Import chapters" are buttons on that screen.
 		add_submenu_page(
 			self::PAGE,
-			__( 'New Chapter', 'sheaf' ),
-			__( 'New Chapter', 'sheaf' ),
+			__( 'Chapters', 'sheaf' ),
+			__( 'Chapters', 'sheaf' ),
 			self::CAPABILITY,
-			'post-new.php?post_type=' . Chapters::POST_TYPE
+			'edit.php?post_type=' . Chapters::POST_TYPE
 		);
 	}
 
@@ -96,12 +97,8 @@ final class Books_Admin {
 		if ( Chapters::POST_TYPE !== ( $GLOBALS['typenow'] ?? '' ) ) {
 			return $submenu_file;
 		}
-		if ( 'post-new.php' === ( $GLOBALS['pagenow'] ?? '' ) ) {
-			return 'post-new.php?post_type=' . Chapters::POST_TYPE;
-		}
-		// The chapter list and editor live under "Books" now that there is no
-		// standalone Chapters menu item.
-		return self::PAGE;
+		// The chapter list, editor and "add new" all live under "Chapters".
+		return 'edit.php?post_type=' . Chapters::POST_TYPE;
 	}
 
 	public static function enqueue( string $hook ): void {

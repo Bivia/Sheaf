@@ -30,13 +30,16 @@ final class Import {
 	private const MAX_BYTES   = 26214400; // 25 MB per file.
 
 	public static function register(): void {
-		// Priority 11 so this lands after Books_Admin's submenus (New Chapter).
 		add_action( 'admin_menu', [ self::class, 'add_page' ], 11 );
 		add_action( 'admin_post_' . self::NONCE_UP, [ self::class, 'handle_upload' ] );
 		add_action( 'admin_post_' . self::NONCE_CREATE, [ self::class, 'handle_create' ] );
 
-		// Keep the Sheafs menu highlighted on our screen, and add an "Import"
-		// button to the core chapter list + a post-import success notice.
+		// The import screen is a real (accessible) submenu whose visible menu item
+		// is hidden with CSS — it is reached from the "Import chapters" button on
+		// the chapter list. Being a real child keeps the Sheafs menu highlighted
+		// for both PHP and the admin-menu JS; the submenu_file filter points the
+		// highlight at the visible "Chapters" item while importing.
+		add_action( 'admin_head', [ self::class, 'hide_menu_css' ] );
 		add_filter( 'submenu_file', [ self::class, 'highlight_submenu' ] );
 		add_action( 'admin_head-edit.php', [ self::class, 'listing_button' ] );
 		add_action( 'admin_notices', [ self::class, 'imported_notice' ] );
@@ -59,6 +62,9 @@ final class Import {
 	}
 
 	public static function add_page(): void {
+		// A real submenu of the Sheafs menu, so the page is accessible and the
+		// menu highlights correctly. Its visible item is hidden by hide_menu_css()
+		// — the screen is reached from the chapter list's "Import chapters" button.
 		add_submenu_page(
 			Books_Admin::MENU_SLUG,
 			__( 'Import Chapters', 'sheaf' ),
@@ -70,14 +76,26 @@ final class Import {
 	}
 
 	/**
-	 * Highlight the Import submenu while on the import screen.
+	 * Hide the import item from the Sheafs submenu (it is reached from the chapter
+	 * list's button). The page stays a real, accessible, highlight-able child;
+	 * only its visible menu link is removed. Scoped to #adminmenu so the button
+	 * elsewhere is unaffected.
+	 */
+	public static function hide_menu_css(): void {
+		echo '<style>#adminmenu a[href*="page=' . esc_attr( self::PAGE ) . '"]{display:none}</style>';
+	}
+
+	/**
+	 * Highlight the "Chapters" item while on the import screen.
 	 */
 	public static function highlight_submenu( ?string $submenu_file ): ?string {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only check.
-		if ( isset( $_GET['page'] ) && self::PAGE === $_GET['page'] ) {
-			return self::PAGE;
-		}
-		return $submenu_file;
+		return self::on_screen() ? 'edit.php?post_type=' . Chapters::POST_TYPE : $submenu_file;
+	}
+
+	/** Whether the current request is the import screen. */
+	private static function on_screen(): bool {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only nav check.
+		return isset( $_GET['page'] ) && self::PAGE === $_GET['page'];
 	}
 
 	/**
