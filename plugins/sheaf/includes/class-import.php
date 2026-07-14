@@ -154,7 +154,7 @@ final class Import {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only pre-fill.
 		$book = isset( $_GET['sheaf_book'] ) ? absint( $_GET['sheaf_book'] ) : 0;
 
-		echo '<p class="description">' . esc_html__( 'Upload one or more Word (.docx) files — each file becomes a draft chapter. Word formatting is cleaned up on import; you can fix titles and order on the next screen.', 'sheaf' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Upload one or more Word (.docx) files. Each file becomes a draft chapter — or, for a whole book in one file, split it into chapters at the breaks you choose. Word formatting is cleaned up on import; you can fix titles and order on the next screen.', 'sheaf' ) . '</p>';
 
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::NONCE_UP );
@@ -174,12 +174,56 @@ final class Import {
 		echo '<p class="description">' . esc_html__( 'Select multiple files to import several chapters at once.', 'sheaf' ) . '</p>';
 		echo '</td></tr>';
 
+		// Split mode: one chapter per file, or split a whole-book file.
+		echo '<tr><th scope="row">' . esc_html__( 'Chapters', 'sheaf' ) . '</th><td>';
+		echo '<fieldset>';
+		echo '<label><input type="radio" name="sheaf_mode" value="single" checked> ' . esc_html__( 'Each file is one chapter', 'sheaf' ) . '</label><br>';
+		echo '<label><input type="radio" name="sheaf_mode" value="split"> ' . esc_html__( 'Split each file into chapters (a whole book in one file)', 'sheaf' ) . '</label>';
+		echo '<div id="sheaf-split-signals" style="margin:.6em 0 0 1.8em;display:none">';
+		echo '<p class="description" style="margin:.2em 0 .4em">' . esc_html__( 'Start a new chapter at each break you select:', 'sheaf' ) . '</p>';
+		$signal_labels = [
+			'page'     => __( 'Page break', 'sheaf' ),
+			'section'  => __( 'Section break (Word)', 'sheaf' ),
+			'heading1' => __( 'Heading 1', 'sheaf' ),
+			'heading2' => __( 'Heading 2', 'sheaf' ),
+			'heading3' => __( 'Heading 3', 'sheaf' ),
+			'symbols'  => __( 'A line of symbols only (e.g. •••, * * *)', 'sheaf' ),
+			'blanks'   => __( 'Three or more blank lines', 'sheaf' ),
+		];
+		foreach ( $signal_labels as $key => $label ) {
+			printf(
+				'<label style="display:block;margin:.15em 0"><input type="checkbox" name="sheaf_split[]" value="%1$s"%2$s> %3$s</label>',
+				esc_attr( $key ),
+				checked( 'page' === $key, true, false ),
+				esc_html( $label )
+			);
+		}
+		echo '<p class="description" style="margin:.4em 0 0">' . esc_html__( 'Consecutive breaks (say a page break then a heading) count as one. Anything before the first break becomes the first chapter, which you can delete.', 'sheaf' ) . '</p>';
+		echo '</div>';
+		echo '</fieldset>';
+		echo '</td></tr>';
+
 		// Cleaning settings.
 		echo '<tr><th scope="row">' . esc_html__( 'Keep formatting', 'sheaf' ) . '</th><td>';
 		self::settings_fields( Import_Serializer::default_settings() );
 		echo '</td></tr>';
 
 		echo '</tbody></table>';
+		?>
+		<script>
+		( function () {
+			var box = document.getElementById( 'sheaf-split-signals' );
+			function sync() {
+				var m = document.querySelector( 'input[name="sheaf_mode"]:checked' );
+				if ( box ) { box.style.display = ( m && 'split' === m.value ) ? '' : 'none'; }
+			}
+			document.querySelectorAll( 'input[name="sheaf_mode"]' ).forEach( function ( r ) {
+				r.addEventListener( 'change', sync );
+			} );
+			sync();
+		} )();
+		</script>
+		<?php
 
 		submit_button( __( 'Upload and preview', 'sheaf' ) );
 		echo '</form>';
@@ -736,11 +780,11 @@ final class Import {
 		$book     = isset( $_POST['sheaf_book'] ) ? absint( $_POST['sheaf_book'] ) : 0;
 		$settings = self::settings_from_request( $book );
 		$files    = self::normalize_files();
+		list( $split, $signals ) = self::split_request();
 
 		$entries = [];
 		foreach ( $files as $file ) {
-			$entry = self::read_file( $file );
-			if ( null !== $entry ) {
+			foreach ( self::read_file( $file, $split, $signals ) as $entry ) {
 				$entries[] = $entry;
 			}
 		}
@@ -793,16 +837,45 @@ final class Import {
 	}
 
 	/**
-	 * Validate and parse one uploaded file into a preview entry.
+	 * The whole-book split request: whether to split, and which signals to split
+	 * on. Split is only on when the mode is "split" and at least one signal is
+	 * chosen (otherwise it falls back to one chapter per file).
+	 *
+	 * @return array{0:bool,1:array<string,bool>}
+	 */
+	private static function split_request(): array {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce checked in handle_upload.
+		$mode = isset( $_POST['sheaf_mode'] ) ? sanitize_key( wp_unslash( $_POST['sheaf_mode'] ) ) : 'single';
+		if ( 'split' !== $mode ) {
+			return [ false, [] ];
+		}
+		$signals = [];
+		if ( isset( $_POST['sheaf_split'] ) && is_array( $_POST['sheaf_split'] ) ) {
+			foreach ( wp_unslash( $_POST['sheaf_split'] ) as $s ) {
+				$s = sanitize_key( (string) $s );
+				if ( in_array( $s, Book_Splitter::SIGNALS, true ) ) {
+					$signals[ $s ] = true;
+				}
+			}
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		return [ ! empty( $signals ), $signals ];
+	}
+
+	/**
+	 * Validate and parse one uploaded file into preview entries. Normally one
+	 * entry per file; in split mode the file's chapters (Book_Splitter) each
+	 * become their own entry.
 	 *
 	 * @param array<string,mixed> $file
-	 * @return array<string,mixed>|null Null when the upload should be ignored.
+	 * @param array<string,bool>  $signals
+	 * @return array<int,array<string,mixed>> One or more entries (never empty).
 	 */
-	private static function read_file( array $file ): ?array {
+	private static function read_file( array $file, bool $split = false, array $signals = [] ): array {
 		$name = (string) $file['name'];
 		$ext  = strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
 
-		$entry = [
+		$base = [
 			'name'   => $name,
 			'title'  => self::title_from_filename( $name ),
 			'blocks' => [],
@@ -813,30 +886,73 @@ final class Import {
 		];
 
 		if ( 'docx' !== $ext ) {
-			$entry['error'] = __( 'Not a .docx Word file — skipped.', 'sheaf' );
-			return $entry;
+			$base['error'] = __( 'Not a .docx Word file — skipped.', 'sheaf' );
+			return [ $base ];
 		}
 		if ( $file['size'] > self::MAX_BYTES || ! is_uploaded_file( (string) $file['tmp'] ) ) {
-			$entry['error'] = __( 'File is too large or could not be read — skipped.', 'sheaf' );
-			return $entry;
+			$base['error'] = __( 'File is too large or could not be read — skipped.', 'sheaf' );
+			return [ $base ];
 		}
 
 		try {
-			$ir = Docx_Reader::read( (string) $file['tmp'] );
+			// In split mode keep the leading heading (each chapter finds its own
+			// title); otherwise let the reader promote it to the file's title.
+			$ir = Docx_Reader::read( (string) $file['tmp'], ! $split );
 		} catch ( \Throwable $e ) {
-			$entry['error'] = $e->getMessage();
-			return $entry;
+			$base['error'] = $e->getMessage();
+			return [ $base ];
 		}
 
-		$entry['blocks'] = $ir['blocks'];
-		$entry['styles'] = (array) ( $ir['styles'] ?? [] );
-		$entry['images'] = (int) $ir['images'];
-		$entry['tables'] = (int) $ir['tables'];
-		if ( '' !== trim( (string) $ir['title'] ) ) {
-			$entry['title'] = sanitize_text_field( $ir['title'] );
+		$styles = (array) ( $ir['styles'] ?? [] );
+
+		if ( ! $split ) {
+			$entry           = $base;
+			$entry['blocks'] = $ir['blocks'];
+			$entry['styles'] = $styles;
+			$entry['images'] = (int) $ir['images'];
+			$entry['tables'] = (int) $ir['tables'];
+			if ( '' !== trim( (string) $ir['title'] ) ) {
+				$entry['title'] = sanitize_text_field( $ir['title'] );
+			}
+			return [ $entry ];
 		}
 
-		return $entry;
+		// Split the file into chapters.
+		$chapters = Book_Splitter::split( $ir['blocks'], $signals );
+		if ( ! $chapters ) {
+			$base['error'] = __( 'No chapters were found with the chosen split points.', 'sheaf' );
+			return [ $base ];
+		}
+
+		$entries = [];
+		$n       = 0;
+		foreach ( $chapters as $chapter ) {
+			++$n;
+			$title = trim( (string) ( $chapter['title'] ?? '' ) );
+			if ( '' === $title ) {
+				$title = sprintf(
+					/* translators: 1: source file name, 2: chapter number. */
+					__( '%1$s — %2$d', 'sheaf' ),
+					self::title_from_filename( $name ),
+					$n
+				);
+			}
+			$entries[] = [
+				'name'   => $name,
+				'title'  => sanitize_text_field( $title ),
+				'blocks' => $chapter['blocks'],
+				'styles' => $styles,
+				'images' => 0,
+				'tables' => 0,
+				'error'  => '',
+			];
+		}
+		// Attribute the file's skipped-media counts to its first chapter, so the
+		// "images skipped" notice still surfaces once.
+		$entries[0]['images'] = (int) $ir['images'];
+		$entries[0]['tables'] = (int) $ir['tables'];
+
+		return $entries;
 	}
 
 	/**
