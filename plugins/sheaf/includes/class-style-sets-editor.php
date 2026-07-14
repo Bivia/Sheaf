@@ -33,9 +33,12 @@ final class Style_Sets_Editor {
 		if ( ! is_admin() ) {
 			return;
 		}
-		// @font-face for referenced web fonts, then the style rules — so embedded
-		// fonts render in the editor canvas too.
-		$css = Fonts::font_face_css() . Frontend::style_css();
+		// @font-face for referenced web fonts, the named-style rules, then the
+		// per-set page styles — so embedded fonts and whole-chapter page styles
+		// both render in the editor canvas. Page styles stay scoped to their
+		// "sheaf-styleset-<slug>" body class; editor-styles.js stamps that class
+		// (and an "entry-content" hook) onto the canvas so they bite here too.
+		$css = Fonts::font_face_css() . Frontend::style_css() . Style_Sets::page_css();
 		if ( '' === $css ) {
 			return;
 		}
@@ -72,14 +75,29 @@ final class Style_Sets_Editor {
 			'sheaf-editor-styles',
 			'SheafStyles',
 			[
-				'bookId' => $book_id,
-				'styles' => self::styles_for_book( $book_id ),
-				'i18n'   => [
+				'bookId'      => $book_id,
+				'styles'      => self::styles_for_book( $book_id ),
+				'bodyClasses' => self::body_classes_for_book( $book_id ),
+				'i18n'        => [
 					'bookChanged' => __( 'You changed this chapter’s book. Save and reload to refresh the available styles.', 'sheaf' ),
 					'stylesLabel' => __( 'Styles', 'sheaf' ),
 				],
 			]
 		);
+	}
+
+	/**
+	 * The "sheaf-styleset-<slug>" body classes for a book's active sets, so the
+	 * editor script can add them to the canvas and make page styles preview.
+	 *
+	 * @return string[]
+	 */
+	private static function body_classes_for_book( int $book_id ): array {
+		$out = [];
+		foreach ( Style_Sets::active_sets( $book_id ) as $set ) {
+			$out[] = Style_Sets::styleset_body_class( (string) $set );
+		}
+		return $out;
 	}
 
 	/**

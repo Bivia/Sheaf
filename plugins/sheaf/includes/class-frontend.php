@@ -82,7 +82,31 @@ final class Frontend {
 			$classes[] = 'sheaf-section';
 		}
 
-		return array_merge( $classes, self::hierarchy_classes( $chapter_id ) );
+		$classes = array_merge( $classes, self::hierarchy_classes( $chapter_id ) );
+
+		return array_merge( $classes, self::styleset_classes( $chapter_id ) );
+	}
+
+	/**
+	 * Body classes that activate the page styles of every set switched on for a
+	 * chapter's book, e.g. "sheaf-styleset-super-liminal". These are what make
+	 * page-style CSS (emitted globally in the head) bite only on the chapters of
+	 * books that opted in — the one place per-book activation reaches the front
+	 * end. Emitted whether or not the set currently defines any page CSS, so the
+	 * hook is stable.
+	 *
+	 * @return string[]
+	 */
+	private static function styleset_classes( int $chapter_id ): array {
+		$book_id = Books::get_book_id( $chapter_id );
+		if ( ! $book_id ) {
+			return [];
+		}
+		$out = [];
+		foreach ( Style_Sets::active_sets( $book_id ) as $set ) {
+			$out[] = Style_Sets::styleset_body_class( $set );
+		}
+		return $out;
 	}
 
 	/**
@@ -143,20 +167,27 @@ final class Frontend {
 	/**
 	 * Emit the whole style-set library as one global <style> block in the head.
 	 *
-	 * The CSS is keyed on each style's class alone (Style_Sets::style_class), so
-	 * a class means the same thing wherever it appears — per-book activation
-	 * governs what the editor and importer OFFER, not what is styled here. That
-	 * is also why this prints on every front-end view rather than only on
-	 * chapters: styled text can surface anywhere (an excerpt, a widget). v1
-	 * prints inline; the identical rules can later become a single cacheable
-	 * stylesheet without changing their meaning.
+	 * Named inline/block styles are keyed on their class alone
+	 * (Style_Sets::style_class), so a class means the same thing wherever it
+	 * appears — activation governs what the editor and importer OFFER, not what
+	 * they style. That is why this prints on every front-end view rather than
+	 * only on chapters: styled text can surface anywhere (an excerpt, a widget).
+	 * Per-set page styles are the deliberate exception: they too are printed
+	 * globally, but each rule is scoped to the set's "sheaf-styleset-<slug>" body
+	 * class, which Frontend::body_class only adds to the chapters of books that
+	 * activate the set — so they bite there and nowhere else. v1 prints inline;
+	 * the identical rules can later become a single cacheable stylesheet.
 	 */
 	public static function print_style_css(): void {
 		if ( is_admin() ) {
 			return;
 		}
-		// @font-face for referenced web fonts, then the style rules.
-		$css = Fonts::font_face_css() . self::style_css();
+		// @font-face for referenced web fonts, the named-style rules, then the
+		// per-set page styles (scoped to each set's body class, so they only
+		// apply on the chapters of books that activate the set). Page styles come
+		// last so they win the cascade against inline/block styles of equal
+		// specificity when an author deliberately overrides one.
+		$css = Fonts::font_face_css() . self::style_css() . Style_Sets::page_css();
 		if ( '' === $css ) {
 			return;
 		}
