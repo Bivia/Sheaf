@@ -347,11 +347,16 @@ final class Books_Admin {
 			.sheaf-chapter-links{margin:.2em 0 .6em;font-size:13px}
 			.sheaf-chapter-links .sep{color:#c3c4c7;margin:0 .2em}
 			.sheaf-rule{border:0;border-top:1px solid #dcdcde;margin:2.5em 0 1.2em}
-			.sheaf-crumb-choice{display:flex;align-items:center;gap:.5em;margin:0 0 .5em}
-			/* The preview is a real trail: links and a real <select>. Make it inert
-			   so a click anywhere on it picks the radio instead of navigating away
-			   or opening the drop-down. */
-			.sheaf-crumb-preview{pointer-events:none}
+			/* Core sets .form-table td fieldset label{display:inline-block}, which
+			   would flow the choices side by side and break each one onto two lines
+			   (the preview trail is a block-level <nav>). Out-specify it so each
+			   choice is one row: radio, then its preview beside it. */
+			.form-table td fieldset label.sheaf-crumb-choice{display:flex;align-items:center;gap:.5em}
+			/* Preview links are inert, so clicking the trail picks the radio rather
+			   than navigating away. The drop-down stays live — opening it is how you
+			   see that it lists every chapter in the book. It carries no name, so it
+			   never submits, and admin-book-scroll.js ignores its change event. */
+			.sheaf-crumb-preview a{pointer-events:none}
 			.sheaf-crumb-preview .sheaf-breadcrumbs__sep{color:#8c8f94;margin:0 .15em}
 		</style>';
 
