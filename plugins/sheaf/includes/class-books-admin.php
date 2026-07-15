@@ -344,6 +344,9 @@ final class Books_Admin {
 			.sheaf-book-title{text-decoration:none;color:inherit}
 			.sheaf-book-title:hover,.sheaf-book-title:focus{color:#2271b1}
 			.sheaf-book-heading .row-actions{left:auto;visibility:visible}
+			.sheaf-chapter-links{margin:.2em 0 .6em;font-size:13px}
+			.sheaf-chapter-links .sep{color:#c3c4c7;margin:0 .2em}
+			.sheaf-rule{border:0;border-top:1px solid #dcdcde;margin:2.5em 0 1.2em}
 		</style>';
 
 		// "Back to the list" link, sitting above the title — muted and unstyled,
@@ -367,14 +370,30 @@ final class Books_Admin {
 		if ( $edit_page ) {
 			$actions[] = sprintf( '<span class="edit"><a href="%s">%s</a></span>', esc_url( $edit_page ), esc_html__( 'Edit Book Page', 'sheaf' ) );
 		}
-		$actions[] = sprintf( '<span><a href="%s">%s</a></span>', esc_url( $add_url ), esc_html__( 'Add New Chapter', 'sheaf' ) );
-		$actions[] = sprintf( '<span><a href="%s">%s</a></span>', esc_url( Import::url( $book_id ) ), esc_html__( 'Import Chapters', 'sheaf' ) );
 		echo '<div class="row-actions">' . implode( ' | ', $actions ) . '</div>'; // Links built and escaped above.
 		echo '</div>';
 
 		echo '<hr class="wp-header-end">';
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Chapters', 'sheaf' ) . '</h2>';
+
+		// The chapter list, filtered to this book — where WordPress's bulk actions
+		// can publish or edit many chapters at once.
+		$bulk_url = add_query_arg(
+			[
+				'post_type'  => Chapters::POST_TYPE,
+				'sheaf_book' => $book_id,
+			],
+			admin_url( 'edit.php' )
+		);
+
+		$links   = [];
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( $bulk_url ), esc_html__( 'Bulk Edit Chapters', 'sheaf' ) );
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( $add_url ), esc_html__( 'Add New Chapter', 'sheaf' ) );
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( Import::url( $book_id ) ), esc_html__( 'Import Chapters', 'sheaf' ) );
+		echo '<p class="sheaf-chapter-links">' . implode( ' <span class="sep">|</span> ', $links ) . '</p>'; // Links built and escaped above.
+
 		echo '<p class="description">' . esc_html__( 'Drag a chapter by its handle to set the reading order — changes save automatically.', 'sheaf' ) . '</p>';
 		echo '<p id="sheaf-reorder-status" class="description" aria-live="polite"></p>';
 
@@ -417,6 +436,7 @@ final class Books_Admin {
 		};
 		$breaks = Scroll_Settings::break_choices();
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Display settings', 'sheaf' ) . '</h2>';
 
 		echo '<style>
@@ -504,6 +524,7 @@ final class Books_Admin {
 
 		/* ------------------------------------------------ Full-book scrolling -- */
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Full-book scrolling', 'sheaf' ) . '</h2>';
 		echo '<p class="description">' . esc_html__( 'Allow readers to move through the entire book in one continuous scroll. They can choose to view a single chapter at a time if they like.', 'sheaf' ) . '</p>';
 
@@ -627,6 +648,7 @@ final class Books_Admin {
 	private static function render_style_sets( int $book_id ): void {
 		$all = Style_Sets::all();
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Style sets', 'sheaf' ) . '</h2>';
 
 		if ( ! $all ) {
