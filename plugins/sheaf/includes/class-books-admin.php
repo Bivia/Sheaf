@@ -487,23 +487,14 @@ final class Books_Admin {
 				<select id="sheaf-breadcrumbs" name="sheaf_scroll[breadcrumbs]">%2$s</select>
 				<p class="description">%3$s</p>
 			</td></tr>',
-			esc_html__( 'Breadcrumb display', 'sheaf' ),
+			esc_html__( 'Display breadcrumbs at', 'sheaf' ),
 			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
 			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
 		);
 
-		// Chapter navigation placement.
-		printf(
-			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td>
-				<select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select>
-				<p class="description">%3$s</p>
-			</td></tr>',
-			esc_html__( 'Display chapter navigation at', 'sheaf' ),
-			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] ),
-			esc_html__( 'Where the previous/next chapter navigation is placed on a chapter page.', 'sheaf' )
-		);
-
 		// Chapter navigation style (the "back" option shows the book's title).
+		// Style comes before placement: what the navigation *is* frames where it
+		// goes, and it pairs the two placement dropdowns either side of it.
 		$nav_styles                 = Scroll_Settings::nav_style_choices();
 		$nav_styles['back_to_book'] = sprintf(
 			/* translators: %s: book title. */
@@ -518,6 +509,17 @@ final class Books_Admin {
 			esc_html__( 'Chapter navigation style', 'sheaf' ),
 			$options( $nav_styles, (string) $s['chapter_nav_style'] ),
 			esc_html__( 'What the chapter navigation contains.', 'sheaf' )
+		);
+
+		// Chapter navigation placement.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td>
+				<select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Display chapter navigation at', 'sheaf' ),
+			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] ),
+			esc_html__( 'Where the previous/next chapter navigation is placed on a chapter page.', 'sheaf' )
 		);
 
 		echo '</tbody></table>';
