@@ -163,9 +163,10 @@ final class Renderer {
 	}
 
 	/**
-	 * Chapter navigation for a single chapter, in one of five styles (see
+	 * Chapter navigation for a single chapter, in one of six styles (see
 	 * Scroll_Settings::NAV_STYLE). An empty $style resolves the book's setting.
 	 *
+	 *  - none:            no navigation.
 	 *  - back_to_book:    one link back to the book page.
 	 *  - prev_next:       previous / next, direction words only.
 	 *  - title_only:      previous / next, chapter titles only.
@@ -191,6 +192,10 @@ final class Renderer {
 		}
 		if ( ! in_array( $style, Scroll_Settings::NAV_STYLE, true ) ) {
 			$style = 'prev_next_title';
+		}
+
+		if ( 'none' === $style ) {
+			return '';
 		}
 
 		if ( 'back_to_book' === $style ) {
@@ -312,8 +317,12 @@ final class Renderer {
 
 	/**
 	 * Breadcrumb trail for a chapter or a Page.
+	 *
+	 * $style applies to chapters only, in one of four styles (see
+	 * Scroll_Settings::BREADCRUMB_STYLE); an empty $style resolves the book's
+	 * setting. A Page's trail is its own hierarchy and has no styles.
 	 */
-	public static function breadcrumbs( int $object_id = 0 ): string {
+	public static function breadcrumbs( int $object_id = 0, string $style = '' ): string {
 		$object_id = $object_id ?: (int) get_queried_object_id();
 		if ( ! $object_id ) {
 			return '';
@@ -324,36 +333,114 @@ final class Renderer {
 			return '';
 		}
 
-		$crumbs = [];
-
 		if ( Chapters::POST_TYPE === $post->post_type ) {
-			$book = Books::get_book( $object_id );
-			if ( $book ) {
-				foreach ( Books::ancestors( $book->ID ) as $ancestor ) {
-					$crumbs[] = [ get_permalink( $ancestor ), get_the_title( $ancestor ) ];
-				}
-				$crumbs[] = [ get_permalink( $book ), get_the_title( $book ) ];
-			}
-			$crumbs[] = [ '', get_the_title( $post ) ];
-		} else {
-			foreach ( Books::ancestors( $object_id ) as $ancestor ) {
-				$crumbs[] = [ get_permalink( $ancestor ), get_the_title( $ancestor ) ];
-			}
-			$crumbs[] = [ '', get_the_title( $post ) ];
+			return self::chapter_breadcrumbs( $post, $style );
 		}
 
-		if ( count( $crumbs ) < 2 ) {
+		$parts = [];
+		foreach ( Books::ancestors( $object_id ) as $ancestor ) {
+			$parts[] = self::crumb_link( (string) get_permalink( $ancestor ), get_the_title( $ancestor ) );
+		}
+		$parts[] = self::crumb_current( get_the_title( $post ) );
+
+		// A lone crumb is just the page's own title — no trail to show.
+		return count( $parts ) < 2 ? '' : self::breadcrumb_nav( $parts );
+	}
+
+	/**
+	 * A chapter's trail, in the book's chosen style:
+	 *
+	 *  - none:         no trail.
+	 *  - book_chapter: book › chapter.
+	 *  - full:         the hierarchy above the book › book › chapter (default).
+	 *  - full_select:  as full, but the chapter is a drop-down of the book's
+	 *                  chapters (JS navigates on change).
+	 *
+	 * Returns '' for a chapter with no book — there is nothing to trail from.
+	 */
+	private static function chapter_breadcrumbs( \WP_Post $post, string $style ): string {
+		$book = Books::get_book( (int) $post->ID );
+		if ( ! $book ) {
+			return '';
+		}
+		$book_id = (int) $book->ID;
+
+		if ( '' === $style ) {
+			$style = (string) Scroll_Settings::get( $book_id )['breadcrumb_style'];
+		}
+		if ( ! in_array( $style, Scroll_Settings::BREADCRUMB_STYLE, true ) ) {
+			$style = 'full';
+		}
+
+		if ( 'none' === $style ) {
 			return '';
 		}
 
 		$parts = [];
-		foreach ( $crumbs as $crumb ) {
-			[ $url, $label ] = $crumb;
-			$parts[]         = $url
-				? sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $label ) )
-				: sprintf( '<span aria-current="page">%s</span>', esc_html( $label ) );
+
+		// The hierarchy above the book — the "full" trails only.
+		if ( 'book_chapter' !== $style ) {
+			foreach ( Books::ancestors( $book_id ) as $ancestor ) {
+				$parts[] = self::crumb_link( (string) get_permalink( $ancestor ), get_the_title( $ancestor ) );
+			}
+		}
+		$parts[] = self::crumb_link( (string) get_permalink( $book ), get_the_title( $book ) );
+
+		// The chapter itself — a drop-down of the book's chapters, or its title.
+		$select  = ( 'full_select' === $style )
+			? self::crumb_chapter_select( Books::get_chapters( $book_id ), (int) $post->ID )
+			: '';
+		$parts[] = '' !== $select ? $select : self::crumb_current( get_the_title( $post ) );
+
+		return self::breadcrumb_nav( $parts );
+	}
+
+	/**
+	 * The book's chapters as a drop-down, the current one selected — the trail's
+	 * last crumb. Shares assets/chapter-nav-select.js with the chapter navigation:
+	 * option values are permalinks, so it navigates on change and degrades to an
+	 * inert control without JS.
+	 *
+	 * @param \WP_Post[] $chapters
+	 */
+	private static function crumb_chapter_select( array $chapters, int $chapter_id ): string {
+		if ( ! $chapters ) {
+			return '';
 		}
 
+		$options = '';
+		foreach ( $chapters as $chapter ) {
+			$options .= sprintf(
+				'<option value="%1$s"%2$s>%3$s</option>',
+				esc_url( (string) get_permalink( $chapter ) ),
+				selected( (int) $chapter->ID, $chapter_id, false ),
+				esc_html( get_the_title( $chapter ) )
+			);
+		}
+
+		return sprintf(
+			'<select class="sheaf-breadcrumbs__select" aria-label="%1$s">%2$s</select>',
+			esc_attr__( 'Jump to chapter', 'sheaf' ),
+			$options
+		);
+	}
+
+	/** One linked crumb. */
+	private static function crumb_link( string $url, string $label ): string {
+		return sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $label ) );
+	}
+
+	/** The trail's last crumb: where you are, so not a link. */
+	private static function crumb_current( string $label ): string {
+		return sprintf( '<span aria-current="page">%s</span>', esc_html( $label ) );
+	}
+
+	/**
+	 * Wrap rendered crumbs in the trail's nav, separated by a chevron.
+	 *
+	 * @param string[] $parts Escaped HTML.
+	 */
+	private static function breadcrumb_nav( array $parts ): string {
 		return sprintf(
 			'<nav class="sheaf-breadcrumbs" aria-label="%1$s">%2$s</nav>',
 			esc_attr__( 'Breadcrumb', 'sheaf' ),

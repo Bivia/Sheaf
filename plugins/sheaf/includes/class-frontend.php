@@ -26,12 +26,11 @@ final class Frontend {
 		add_shortcode( 'sheaf_toc', [ self::class, 'toc_shortcode' ] );
 		add_shortcode( 'sheaf_breadcrumbs', [ self::class, 'breadcrumbs_shortcode' ] );
 		add_shortcode( 'sheaf_chapter_nav', [ self::class, 'chapter_nav_shortcode' ] );
-		// Wrap a chapter's body in a .sheaf-chapter region *before* breadcrumbs
-		// (9) and chapter-nav (11), so that chrome stays outside the region the
-		// full-book reader splices and re-fetches.
+		// Wrap a chapter's body in a .sheaf-chapter region *before* the chrome
+		// (9), so that chrome stays outside the region the full-book reader
+		// splices and re-fetches.
 		add_filter( 'the_content', [ self::class, 'wrap_chapter_content' ], 8 );
-		add_filter( 'the_content', [ self::class, 'auto_breadcrumbs' ], 9 );
-		add_filter( 'the_content', [ self::class, 'auto_chapter_nav' ], 11 );
+		add_filter( 'the_content', [ self::class, 'auto_chapter_chrome' ], 9 );
 		add_filter( 'body_class', [ self::class, 'body_class' ] );
 		add_action( 'wp_head', [ self::class, 'print_style_css' ], 20 );
 
@@ -243,80 +242,50 @@ final class Frontend {
 	}
 
 	/**
-	 * Insert chapter navigation around a single chapter's content, per the
-	 * book's "Display chapter navigation at" (none/top/bottom/both) and style
-	 * settings. Always rendered — a reader can view one chapter at a time even
-	 * when full-book scrolling is on (the active reader hides it via CSS, so it
-	 * only shows in the single-chapter view or without JS).
+	 * Insert a single chapter's chrome — the breadcrumb trail and the chapter
+	 * navigation — around its content, each per its own book setting
+	 * (none/top/bottom/both): "Breadcrumb display" and "Display chapter
+	 * navigation at".
+	 *
+	 * Both are placed in one pass because they are ordered relative to each
+	 * other: breadcrumbs precede the navigation at the top and at the bottom
+	 * alike. Two independent wrapping filters cannot express that — whichever
+	 * ran second would sit outside the other at *both* ends, so the pair would
+	 * read in opposite orders top and bottom.
+	 *
+	 * Navigation is always rendered — a reader can view one chapter at a time
+	 * even when full-book scrolling is on (the active reader hides it via CSS,
+	 * so it only shows in the single-chapter view or without JS). In full-book
+	 * view the reader rewrites the trail client-side to end at the book, so the
+	 * plain single-chapter fallback (no JS, or opted out) stays correct.
 	 */
-	public static function auto_chapter_nav( string $content ): string {
+	public static function auto_chapter_chrome( string $content ): string {
 		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
 			return $content;
 		}
 
-		/** Filter: return false to disable automatic chapter navigation. */
-		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
-			return $content;
-		}
-
-		$id      = (int) get_the_ID();
-		$book_id = Books::get_book_id( $id );
-
+		$id       = (int) get_the_ID();
+		$book_id  = Books::get_book_id( $id );
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
-		$pos      = (string) $settings['chapter_nav_at'];
-		if ( 'none' === $pos ) {
-			return $content;
-		}
-
-		$nav = Renderer::chapter_nav( $id, (string) $settings['chapter_nav_style'] );
-		if ( '' === $nav ) {
-			return $content;
-		}
-
-		if ( 'top' === $pos ) {
-			return $nav . $content;
-		}
-		if ( 'both' === $pos ) {
-			return $nav . $content . $nav;
-		}
-		return $content . $nav; // bottom (default).
-	}
-
-	/**
-	 * Insert the chapter breadcrumb trail per the book's "Breadcrumb display"
-	 * setting (top/bottom/both/none). In full-book view the reader rewrites the
-	 * trail client-side to end at the book, so the plain single-chapter fallback
-	 * (no JS, or opted out) stays correct.
-	 */
-	public static function auto_breadcrumbs( string $content ): string {
-		if ( ! is_singular( Chapters::POST_TYPE ) || ! in_the_loop() || ! is_main_query() ) {
-			return $content;
-		}
 
 		/** Filter: return false to disable automatic chapter breadcrumbs. */
-		if ( ! apply_filters( 'sheaf_auto_breadcrumbs', true ) ) {
-			return $content;
-		}
+		$crumbs    = apply_filters( 'sheaf_auto_breadcrumbs', true )
+			? Renderer::breadcrumbs( $id, (string) $settings['breadcrumb_style'] )
+			: '';
+		$crumbs_at = $book_id ? (string) $settings['breadcrumbs'] : 'top';
 
-		$id      = (int) get_the_ID();
-		$book_id = Books::get_book_id( $id );
-		$pos     = $book_id ? (string) Scroll_Settings::get( $book_id )['breadcrumbs'] : 'top';
-		if ( 'none' === $pos ) {
-			return $content;
-		}
+		/** Filter: return false to disable automatic chapter navigation. */
+		$nav    = apply_filters( 'sheaf_auto_chapter_nav', true )
+			? Renderer::chapter_nav( $id, (string) $settings['chapter_nav_style'] )
+			: '';
+		$nav_at = (string) $settings['chapter_nav_at'];
 
-		$crumbs = Renderer::breadcrumbs( $id );
-		if ( '' === $crumbs ) {
-			return $content;
-		}
+		$shows = static fn( string $setting, string $end ): bool => $setting === $end || 'both' === $setting;
 
-		if ( 'bottom' === $pos ) {
-			return $content . $crumbs;
-		}
-		if ( 'both' === $pos ) {
-			return $crumbs . $content . $crumbs;
-		}
-		return $crumbs . $content; // top (default).
+		$top    = ( $shows( $crumbs_at, 'top' ) ? $crumbs : '' ) . ( $shows( $nav_at, 'top' ) ? $nav : '' );
+		$bottom = ( $shows( $crumbs_at, 'bottom' ) ? $crumbs : '' ) . ( $shows( $nav_at, 'bottom' ) ? $nav : '' );
+
+		return $top . $content . $bottom;
 	}
 
 	/**
@@ -464,22 +433,28 @@ final class Frontend {
 	}
 
 	/**
-	 * Enqueue the tiny drop-down navigator script, but only on a separate-page
-	 * chapter whose book uses the "Full contents drop-down" navigation style.
-	 * The markup works without it (an inert <select>); this just makes choosing
-	 * an option navigate.
+	 * Enqueue the tiny drop-down navigator script on a chapter whose book shows a
+	 * chapter drop-down — either as its navigation style, or as the last crumb of
+	 * its breadcrumb trail. Both controls share the script. The markup works
+	 * without it (an inert <select>); this just makes choosing an option navigate.
 	 */
 	public static function enqueue_chapter_nav_select(): void {
 		if ( ! is_singular( Chapters::POST_TYPE ) ) {
 			return;
 		}
-		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
-			return;
-		}
-		$book_id = Books::get_book_id( (int) get_queried_object_id() );
 
+		$book_id  = Books::get_book_id( (int) get_queried_object_id() );
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
-		if ( 'none' === $settings['chapter_nav_at'] || 'toc_select' !== $settings['chapter_nav_style'] ) {
+
+		// Switching either off is a style, so the style alone decides: every
+		// remaining placement renders somewhere.
+		$in_nav = apply_filters( 'sheaf_auto_chapter_nav', true )
+			&& 'toc_select' === $settings['chapter_nav_style'];
+
+		$in_crumbs = apply_filters( 'sheaf_auto_breadcrumbs', true )
+			&& 'full_select' === $settings['breadcrumb_style'];
+
+		if ( ! $in_nav && ! $in_crumbs ) {
 			return;
 		}
 

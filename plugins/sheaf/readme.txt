@@ -31,10 +31,14 @@ Display (all opt-in except the chapter breadcrumb)
   book under the book's Display settings.
 * `[sheaf_breadcrumbs]` / "Sheaf: Breadcrumbs" block — the hierarchy trail.
 * Single chapter views show breadcrumbs and chapter navigation automatically.
-  Under the book's Display settings, each book chooses where its breadcrumbs sit
-  (top / bottom / both / none) and how its chapter navigation looks (back-to-book,
-  previous/next, chapter titles, or a full-contents drop-down). Both remain
-  filterable via `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
+  Under the book's Display settings, each book chooses what its breadcrumbs
+  contain (none, book and chapter, the full trail, or the full trail ending in a
+  chapter drop-down) and where they sit (top / bottom / both), and likewise what
+  its chapter navigation contains (none, back-to-book, previous/next, chapter
+  titles, or a full-contents drop-down) and where it sits. Either is switched off
+  by choosing a style of "None". The breadcrumb styles are previewed with the
+  book's own titles as you choose. Both remain filterable via
+  `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
 * Style Sets — reusable styling activated per book. Editor Styles are named
   inline/paragraph styles an author applies while writing; Page Styles are CSS
   scoped to a book's chapters that restyle them wholesale (body font, paragraph
@@ -44,6 +48,11 @@ Display (all opt-in except the chapter breadcrumb)
 * Import — bring chapters in from Word (.docx): one file per chapter, or split a
   whole-book file into chapters at page breaks, section breaks, headings, a line
   of symbols (a scene-break glyph), or blank gaps. See docs/whole-book-import.md.
+
+The byline, date, and related-post lists around a chapter come from your theme,
+not from Sheaf. To drop them, give chapters their own template in the Site
+Editor — everything Sheaf adds travels with the content and keeps working. See
+docs/chapter-template.md.
 
 == Roadmap ==
 * Addressable text versions that comments can reference and link to.

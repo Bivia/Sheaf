@@ -150,7 +150,13 @@
 		timer = setTimeout( save, 400 );
 	}
 
-	form.addEventListener( 'change', function () {
+	form.addEventListener( 'change', function ( e ) {
+		// The breadcrumb-style previews are live controls so their drop-down can be
+		// opened and read, but they are previews, not settings: they carry no name
+		// and must not trigger a save.
+		if ( e.target.closest && e.target.closest( '.sheaf-crumb-preview' ) ) {
+			return;
+		}
 		syncUi();
 		queueSave();
 	} );

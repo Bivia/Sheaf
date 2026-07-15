@@ -344,6 +344,20 @@ final class Books_Admin {
 			.sheaf-book-title{text-decoration:none;color:inherit}
 			.sheaf-book-title:hover,.sheaf-book-title:focus{color:#2271b1}
 			.sheaf-book-heading .row-actions{left:auto;visibility:visible}
+			.sheaf-chapter-links{margin:.2em 0 .6em;font-size:13px}
+			.sheaf-chapter-links .sep{color:#c3c4c7;margin:0 .2em}
+			.sheaf-rule{border:0;border-top:1px solid #dcdcde;margin:2.5em 0 1.2em}
+			/* Core sets .form-table td fieldset label{display:inline-block}, which
+			   would flow the choices side by side and break each one onto two lines
+			   (the preview trail is a block-level <nav>). Out-specify it so each
+			   choice is one row: radio, then its preview beside it. */
+			.form-table td fieldset label.sheaf-crumb-choice{display:flex;align-items:center;gap:.5em}
+			/* Preview links are inert, so clicking the trail picks the radio rather
+			   than navigating away. The drop-down stays live — opening it is how you
+			   see that it lists every chapter in the book. It carries no name, so it
+			   never submits, and admin-book-scroll.js ignores its change event. */
+			.sheaf-crumb-preview a{pointer-events:none}
+			.sheaf-crumb-preview .sheaf-breadcrumbs__sep{color:#8c8f94;margin:0 .15em}
 		</style>';
 
 		// "Back to the list" link, sitting above the title — muted and unstyled,
@@ -367,14 +381,30 @@ final class Books_Admin {
 		if ( $edit_page ) {
 			$actions[] = sprintf( '<span class="edit"><a href="%s">%s</a></span>', esc_url( $edit_page ), esc_html__( 'Edit Book Page', 'sheaf' ) );
 		}
-		$actions[] = sprintf( '<span><a href="%s">%s</a></span>', esc_url( $add_url ), esc_html__( 'Add New Chapter', 'sheaf' ) );
-		$actions[] = sprintf( '<span><a href="%s">%s</a></span>', esc_url( Import::url( $book_id ) ), esc_html__( 'Import Chapters', 'sheaf' ) );
 		echo '<div class="row-actions">' . implode( ' | ', $actions ) . '</div>'; // Links built and escaped above.
 		echo '</div>';
 
 		echo '<hr class="wp-header-end">';
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Chapters', 'sheaf' ) . '</h2>';
+
+		// The chapter list, filtered to this book — where WordPress's bulk actions
+		// can publish or edit many chapters at once.
+		$bulk_url = add_query_arg(
+			[
+				'post_type'  => Chapters::POST_TYPE,
+				'sheaf_book' => $book_id,
+			],
+			admin_url( 'edit.php' )
+		);
+
+		$links   = [];
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( $bulk_url ), esc_html__( 'Bulk Edit Chapters', 'sheaf' ) );
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( $add_url ), esc_html__( 'Add New Chapter', 'sheaf' ) );
+		$links[] = sprintf( '<a href="%s">%s</a>', esc_url( Import::url( $book_id ) ), esc_html__( 'Import Chapters', 'sheaf' ) );
+		echo '<p class="sheaf-chapter-links">' . implode( ' <span class="sep">|</span> ', $links ) . '</p>'; // Links built and escaped above.
+
 		echo '<p class="description">' . esc_html__( 'Drag a chapter by its handle to set the reading order — changes save automatically.', 'sheaf' ) . '</p>';
 		echo '<p id="sheaf-reorder-status" class="description" aria-live="polite"></p>';
 
@@ -384,6 +414,50 @@ final class Books_Admin {
 		self::render_style_sets( $book_id );
 
 		self::render_display_settings( $book_id );
+	}
+
+	/**
+	 * The "Breadcrumbs style" chooser: one radio per style, labelled by the trail
+	 * that style actually produces for this book — real titles, real markup, from
+	 * the same Renderer the front end uses. Radios rather than a drop-down because
+	 * one of the styles *is* a drop-down, which cannot be shown inside an <option>.
+	 *
+	 * The preview needs a chapter to stand in for "the one you are reading", so it
+	 * uses one from the middle of the book: unlike the first or last chapter, it
+	 * has neighbours on both sides, and its title is representative. A book with no
+	 * chapters has nothing to preview, so it falls back to plain text labels.
+	 */
+	private static function render_breadcrumb_style( int $book_id, string $current ): void {
+		$labels   = Scroll_Settings::breadcrumb_style_choices();
+		$chapters = Books::get_chapters( $book_id );
+		$sample   = $chapters ? $chapters[ intdiv( count( $chapters ), 2 ) ] : null;
+
+		$rows = '';
+		foreach ( $labels as $value => $label ) {
+			$preview = $sample ? Renderer::breadcrumbs( (int) $sample->ID, (string) $value ) : '';
+			$rows   .= sprintf(
+				'<label class="sheaf-crumb-choice">
+					<input type="radio" name="sheaf_scroll[breadcrumb_style]" value="%1$s"%2$s>
+					<span class="screen-reader-text">%3$s</span>
+					<span class="sheaf-crumb-preview">%4$s</span>
+				</label>',
+				esc_attr( (string) $value ),
+				checked( $current, (string) $value, false ),
+				esc_html( $label ),
+				// Renderer output: built and escaped there.
+				$preview ?: '<em>' . esc_html( $label ) . '</em>'
+			);
+		}
+
+		printf(
+			'<tr><th scope="row">%1$s</th><td>
+				<fieldset><legend class="screen-reader-text">%1$s</legend>%2$s</fieldset>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Breadcrumbs style', 'sheaf' ),
+			$rows, // Built and escaped above.
+			esc_html__( 'What a chapter’s breadcrumb trail contains. Previewed with a chapter from the middle of this book.', 'sheaf' )
+		);
 	}
 
 	/**
@@ -417,6 +491,7 @@ final class Books_Admin {
 		};
 		$breaks = Scroll_Settings::break_choices();
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Display settings', 'sheaf' ) . '</h2>';
 
 		echo '<style>
@@ -442,7 +517,7 @@ final class Books_Admin {
 				<span class="sheaf-toc-custom"%3$s><input type="text" name="sheaf_scroll[toc_list_style_custom]" value="%4$s" class="regular-text" placeholder="%5$s"></span>
 				<p class="description">%6$s</p>
 			</td></tr>',
-			esc_html__( 'Table of contents style', 'sheaf' ),
+			esc_html__( 'Table of contents bullet style', 'sheaf' ),
 			$style_options,
 			'custom' === $s['toc_list_style'] ? '' : ' style="display:none"',
 			esc_attr( (string) $s['toc_list_style_custom'] ),
@@ -461,29 +536,21 @@ final class Books_Admin {
 			esc_html__( 'What each table-of-contents entry shows after the chapter title.', 'sheaf' )
 		);
 
-		// Breadcrumb display.
+		// Breadcrumbs: what the trail contains, then where it sits.
+		self::render_breadcrumb_style( $book_id, (string) $s['breadcrumb_style'] );
+
 		printf(
 			'<tr><th scope="row"><label for="sheaf-breadcrumbs">%1$s</label></th><td>
 				<select id="sheaf-breadcrumbs" name="sheaf_scroll[breadcrumbs]">%2$s</select>
 				<p class="description">%3$s</p>
 			</td></tr>',
-			esc_html__( 'Breadcrumb display', 'sheaf' ),
+			esc_html__( 'Display breadcrumbs at', 'sheaf' ),
 			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
 			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
 		);
 
-		// Chapter navigation placement.
-		printf(
-			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td>
-				<select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select>
-				<p class="description">%3$s</p>
-			</td></tr>',
-			esc_html__( 'Display chapter navigation at', 'sheaf' ),
-			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] ),
-			esc_html__( 'Where the previous/next chapter navigation is placed on a chapter page.', 'sheaf' )
-		);
-
-		// Chapter navigation style (the "back" option shows the book's title).
+		// Chapter navigation: what it contains, then where it sits — the same order
+		// as the breadcrumbs above. The "back" option shows the book's title.
 		$nav_styles                 = Scroll_Settings::nav_style_choices();
 		$nav_styles['back_to_book'] = sprintf(
 			/* translators: %s: book title. */
@@ -500,10 +567,22 @@ final class Books_Admin {
 			esc_html__( 'What the chapter navigation contains.', 'sheaf' )
 		);
 
+		// Chapter navigation placement.
+		printf(
+			'<tr><th scope="row"><label for="sheaf-nav-at">%1$s</label></th><td>
+				<select id="sheaf-nav-at" name="sheaf_scroll[chapter_nav_at]">%2$s</select>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Display chapter navigation at', 'sheaf' ),
+			$options( Scroll_Settings::nav_pos_choices(), (string) $s['chapter_nav_at'] ),
+			esc_html__( 'Where the previous/next chapter navigation is placed on a chapter page.', 'sheaf' )
+		);
+
 		echo '</tbody></table>';
 
 		/* ------------------------------------------------ Full-book scrolling -- */
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Full-book scrolling', 'sheaf' ) . '</h2>';
 		echo '<p class="description">' . esc_html__( 'Allow readers to move through the entire book in one continuous scroll. They can choose to view a single chapter at a time if they like.', 'sheaf' ) . '</p>';
 
@@ -627,6 +706,7 @@ final class Books_Admin {
 	private static function render_style_sets( int $book_id ): void {
 		$all = Style_Sets::all();
 
+		echo '<hr class="sheaf-rule">';
 		echo '<h2>' . esc_html__( 'Style sets', 'sheaf' ) . '</h2>';
 
 		if ( ! $all ) {
