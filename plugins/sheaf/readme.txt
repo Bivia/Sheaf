@@ -32,9 +32,12 @@ Display (all opt-in except the chapter breadcrumb)
 * `[sheaf_breadcrumbs]` / "Sheaf: Breadcrumbs" block — the hierarchy trail.
 * Single chapter views show breadcrumbs and chapter navigation automatically.
   Under the book's Display settings, each book chooses where its breadcrumbs sit
-  (top / bottom / both / none) and how its chapter navigation looks (back-to-book,
-  previous/next, chapter titles, or a full-contents drop-down). Both remain
-  filterable via `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
+  (top / bottom / both / none) and what they contain (a link back to the book,
+  book and chapter, the full trail, or the full trail ending in a chapter
+  drop-down), and how its chapter navigation looks (back-to-book, previous/next,
+  chapter titles, or a full-contents drop-down). The breadcrumb styles are
+  previewed with the book's own titles as you choose. Both remain filterable via
+  `sheaf_auto_breadcrumbs` / `sheaf_auto_chapter_nav`.
 * Style Sets — reusable styling activated per book. Editor Styles are named
   inline/paragraph styles an author applies while writing; Page Styles are CSS
   scoped to a book's chapters that restyle them wholesale (body font, paragraph

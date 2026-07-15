@@ -108,6 +108,7 @@ try {
 		$check( '' === $d['toc_list_style_custom'], 'default: TOC custom list style empty' );
 		$check( 'reading_time' === $d['toc_meta'], 'default: TOC meta = reading time' );
 		$check( 'top' === $d['breadcrumbs'], 'default: breadcrumbs at top' );
+		$check( 'full' === $d['breadcrumb_style'], 'default: breadcrumb style = full trail' );
 		$check( 'bottom' === $d['chapter_nav_at'], 'default: chapter nav at bottom' );
 		$check( 'prev_next_title' === $d['chapter_nav_style'], 'default: chapter nav style = prev/next + title' );
 
@@ -116,12 +117,15 @@ try {
 			[
 				'toc_meta'          => 'bogus',
 				'breadcrumbs'       => 'bottom',
+				'breadcrumb_style'  => 'book_chapter',
 				'chapter_nav_at'    => 'top',
 				'chapter_nav_style' => 'nope',
 			]
 		);
 		$check( 'reading_time' === $nav['toc_meta'], 'sanitize: unknown TOC meta -> default' );
 		$check( 'bottom' === $nav['breadcrumbs'], 'sanitize: valid breadcrumb pos kept' );
+		$check( 'book_chapter' === $nav['breadcrumb_style'], 'sanitize: valid breadcrumb style kept' );
+		$check( 'full' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumb_style' => 'nope' ] )['breadcrumb_style'], 'sanitize: unknown breadcrumb style -> default' );
 		$check( 'top' === $nav['chapter_nav_at'], 'sanitize: valid nav pos kept' );
 		$check( 'prev_next_title' === $nav['chapter_nav_style'], 'sanitize: unknown nav style -> default' );
 
@@ -270,6 +274,57 @@ try {
 	\Sheaf\Scroll_Settings::save( $book, [ 'chapter_nav_style' => 'title_only' ] );
 	$nav = \Sheaf\Renderer::chapter_nav( $c3, '' );
 	$check( false === strpos( $nav, 'nav__dir' ), 'nav: empty style honours the book setting' );
+
+	/* ------------------------------------------- Renderer::breadcrumbs ---- */
+	// Give the book a parent, so the styles that include the hierarchy above it
+	// are distinguishable from the ones that do not.
+
+	$shelf = (int) wp_insert_post(
+		[ 'post_type' => 'page', 'post_title' => 'Scroll Test Shelf', 'post_status' => 'publish' ]
+	);
+	$created[] = $shelf;
+	wp_update_post( [ 'ID' => $book, 'post_parent' => $shelf ] );
+
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'full' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: full includes the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: full includes the book' );
+	$check( false !== strpos( $crumbs, 'aria-current="page"' ), 'crumbs: full ends at the chapter, unlinked' );
+
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'book_chapter' );
+	$check( false === strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: book_chapter drops the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: book_chapter keeps the book' );
+
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'back_to_book' );
+	$check( false !== strpos( $crumbs, 'back to' ), 'crumbs: back_to_book is a back link' );
+	$check( false !== strpos( $crumbs, (string) get_permalink( $book ) ), 'crumbs: back_to_book links to the book' );
+	$check( false === strpos( $crumbs, 'breadcrumbs__sep' ), 'crumbs: back_to_book has no trail' );
+
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c3, 'full_select' );
+	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__select' ), 'crumbs: full_select ends in a select' );
+	$check( false !== strpos( $crumbs, 'selected' ), 'crumbs: full_select marks the current chapter' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: full_select keeps the full trail' );
+	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: full_select replaces the chapter crumb' );
+
+	// Empty style reads the book's breadcrumb_style setting.
+	\Sheaf\Scroll_Settings::save( $book, [ 'breadcrumb_style' => 'book_chapter' ] );
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, '' );
+	$check( false === strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: empty style honours the book setting' );
+
+	// An unknown style falls back to the full trail rather than rendering nothing.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'nonsense' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: unknown style -> full trail' );
+
+	// A Page's own trail is its hierarchy, unaffected by the chapter styles.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $book, 'back_to_book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: a Page trail ignores the chapter style' );
+	$check( '' === \Sheaf\Renderer::breadcrumbs( $shelf ), 'crumbs: a lone crumb renders nothing' );
+
+	// A chapter with no book has nothing to trail from.
+	$orphan = (int) wp_insert_post(
+		[ 'post_type' => \Sheaf\Chapters::POST_TYPE, 'post_title' => 'Orphan', 'post_status' => 'publish' ]
+	);
+	$created[] = $orphan;
+	$check( '' === \Sheaf\Renderer::breadcrumbs( $orphan, 'full' ), 'crumbs: off-book chapter renders nothing' );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );

@@ -269,7 +269,9 @@ final class Frontend {
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
 
 		/** Filter: return false to disable automatic chapter breadcrumbs. */
-		$crumbs    = apply_filters( 'sheaf_auto_breadcrumbs', true ) ? Renderer::breadcrumbs( $id ) : '';
+		$crumbs    = apply_filters( 'sheaf_auto_breadcrumbs', true )
+			? Renderer::breadcrumbs( $id, (string) $settings['breadcrumb_style'] )
+			: '';
 		$crumbs_at = $book_id ? (string) $settings['breadcrumbs'] : 'top';
 
 		/** Filter: return false to disable automatic chapter navigation. */
@@ -431,22 +433,28 @@ final class Frontend {
 	}
 
 	/**
-	 * Enqueue the tiny drop-down navigator script, but only on a separate-page
-	 * chapter whose book uses the "Full contents drop-down" navigation style.
-	 * The markup works without it (an inert <select>); this just makes choosing
-	 * an option navigate.
+	 * Enqueue the tiny drop-down navigator script on a chapter whose book shows a
+	 * chapter drop-down — either as its navigation style, or as the last crumb of
+	 * its breadcrumb trail. Both controls share the script. The markup works
+	 * without it (an inert <select>); this just makes choosing an option navigate.
 	 */
 	public static function enqueue_chapter_nav_select(): void {
 		if ( ! is_singular( Chapters::POST_TYPE ) ) {
 			return;
 		}
-		if ( ! apply_filters( 'sheaf_auto_chapter_nav', true ) ) {
-			return;
-		}
-		$book_id = Books::get_book_id( (int) get_queried_object_id() );
 
+		$book_id  = Books::get_book_id( (int) get_queried_object_id() );
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
-		if ( 'none' === $settings['chapter_nav_at'] || 'toc_select' !== $settings['chapter_nav_style'] ) {
+
+		$in_nav = apply_filters( 'sheaf_auto_chapter_nav', true )
+			&& 'none' !== $settings['chapter_nav_at']
+			&& 'toc_select' === $settings['chapter_nav_style'];
+
+		$in_crumbs = apply_filters( 'sheaf_auto_breadcrumbs', true )
+			&& 'none' !== $settings['breadcrumbs']
+			&& 'full_select' === $settings['breadcrumb_style'];
+
+		if ( ! $in_nav && ! $in_crumbs ) {
 			return;
 		}
 

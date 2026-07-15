@@ -347,6 +347,12 @@ final class Books_Admin {
 			.sheaf-chapter-links{margin:.2em 0 .6em;font-size:13px}
 			.sheaf-chapter-links .sep{color:#c3c4c7;margin:0 .2em}
 			.sheaf-rule{border:0;border-top:1px solid #dcdcde;margin:2.5em 0 1.2em}
+			.sheaf-crumb-choice{display:flex;align-items:center;gap:.5em;margin:0 0 .5em}
+			/* The preview is a real trail: links and a real <select>. Make it inert
+			   so a click anywhere on it picks the radio instead of navigating away
+			   or opening the drop-down. */
+			.sheaf-crumb-preview{pointer-events:none}
+			.sheaf-crumb-preview .sheaf-breadcrumbs__sep{color:#8c8f94;margin:0 .15em}
 		</style>';
 
 		// "Back to the list" link, sitting above the title — muted and unstyled,
@@ -403,6 +409,50 @@ final class Books_Admin {
 		self::render_style_sets( $book_id );
 
 		self::render_display_settings( $book_id );
+	}
+
+	/**
+	 * The "Breadcrumbs style" chooser: one radio per style, labelled by the trail
+	 * that style actually produces for this book — real titles, real markup, from
+	 * the same Renderer the front end uses. Radios rather than a drop-down because
+	 * one of the styles *is* a drop-down, which cannot be shown inside an <option>.
+	 *
+	 * The preview needs a chapter to stand in for "the one you are reading", so it
+	 * uses one from the middle of the book: unlike the first or last chapter, it
+	 * has neighbours on both sides, and its title is representative. A book with no
+	 * chapters has nothing to preview, so it falls back to plain text labels.
+	 */
+	private static function render_breadcrumb_style( int $book_id, string $current ): void {
+		$labels   = Scroll_Settings::breadcrumb_style_choices();
+		$chapters = Books::get_chapters( $book_id );
+		$sample   = $chapters ? $chapters[ intdiv( count( $chapters ), 2 ) ] : null;
+
+		$rows = '';
+		foreach ( $labels as $value => $label ) {
+			$preview = $sample ? Renderer::breadcrumbs( (int) $sample->ID, (string) $value ) : '';
+			$rows   .= sprintf(
+				'<label class="sheaf-crumb-choice">
+					<input type="radio" name="sheaf_scroll[breadcrumb_style]" value="%1$s"%2$s>
+					<span class="screen-reader-text">%3$s</span>
+					<span class="sheaf-crumb-preview">%4$s</span>
+				</label>',
+				esc_attr( (string) $value ),
+				checked( $current, (string) $value, false ),
+				esc_html( $label ),
+				// Renderer output: built and escaped there.
+				$preview ?: '<em>' . esc_html( $label ) . '</em>'
+			);
+		}
+
+		printf(
+			'<tr><th scope="row">%1$s</th><td>
+				<fieldset><legend class="screen-reader-text">%1$s</legend>%2$s</fieldset>
+				<p class="description">%3$s</p>
+			</td></tr>',
+			esc_html__( 'Breadcrumbs style', 'sheaf' ),
+			$rows, // Built and escaped above.
+			esc_html__( 'What a chapter’s breadcrumb trail contains. Previewed with a chapter from the middle of this book.', 'sheaf' )
+		);
 	}
 
 	/**
@@ -491,6 +541,8 @@ final class Books_Admin {
 			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
 			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
 		);
+
+		self::render_breadcrumb_style( $book_id, (string) $s['breadcrumb_style'] );
 
 		// Chapter navigation style (the "back" option shows the book's title).
 		// Style comes before placement: what the navigation *is* frames where it
