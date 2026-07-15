@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -63,6 +63,22 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.10.0 =
+* Breadcrumbs style: each book now chooses what a chapter's breadcrumb trail
+  contains — the book and chapter, the full trail, or the full trail ending in a
+  drop-down of the book's chapters. Pick from previews rendered with the book's
+  own titles, so you choose the trail itself rather than a description of it.
+* Switching the breadcrumbs or the chapter navigation off is now a style of
+  "None", and the placement fields offer only top, bottom, and top and bottom.
+  Books that had either switched off stay off.
+* Breadcrumbs now come before the chapter navigation at the top of a chapter as
+  well as the bottom, instead of the two reading in opposite orders.
+* The book screen groups its chapter links under the Chapters heading and adds
+  "Bulk Edit Chapters", opening the chapter list filtered to that book.
+* New docs/chapter-template.md: the byline, date, and related posts around a
+  chapter come from the theme, not from Sheaf. It covers giving chapters their
+  own template in the Site Editor, and what Sheaf keeps supplying when you do.
 
 = 0.9.0 =
 * Page Styles: each style set can now carry free-form CSS scoped to the books
