@@ -60,17 +60,21 @@ final class Scroll_Settings {
 	/** What (if anything) each TOC item shows after the chapter title. */
 	public const TOC_META = [ 'none', 'reading_time', 'word_count', 'page_number' ];
 
-	/** Where the chapter breadcrumb trail is inserted on a single chapter view. */
-	public const BREADCRUMB_POS = [ 'none', 'top', 'bottom', 'both' ];
+	/**
+	 * Where the chapter breadcrumb trail is inserted on a single chapter view.
+	 * Switching the trail off is a style (`none`), not a placement — see
+	 * BREADCRUMB_STYLE and upgrade_off().
+	 */
+	public const BREADCRUMB_POS = [ 'top', 'bottom', 'both' ];
 
-	/** What a chapter's breadcrumb trail contains. */
-	public const BREADCRUMB_STYLE = [ 'back_to_book', 'book_chapter', 'full', 'full_select' ];
+	/** What a chapter's breadcrumb trail contains, or `none` for no trail. */
+	public const BREADCRUMB_STYLE = [ 'none', 'book_chapter', 'full', 'full_select' ];
 
 	/** Where the chapter prev/next navigation is inserted (separate-page mode). */
-	public const NAV_POS = [ 'none', 'top', 'bottom', 'both' ];
+	public const NAV_POS = [ 'top', 'bottom', 'both' ];
 
-	/** What the chapter navigation contains (separate-page mode). */
-	public const NAV_STYLE = [ 'back_to_book', 'prev_next', 'title_only', 'prev_next_title', 'toc_select' ];
+	/** What the chapter navigation contains (separate-page mode), or `none`. */
+	public const NAV_STYLE = [ 'none', 'back_to_book', 'prev_next', 'title_only', 'prev_next_title', 'toc_select' ];
 
 	/**
 	 * Factory defaults. A book with no saved settings reads exactly this.
@@ -158,7 +162,8 @@ final class Scroll_Settings {
 	 * @return array<string,mixed>
 	 */
 	public static function sanitize( array $raw ): array {
-		$d = self::defaults();
+		$d   = self::defaults();
+		$raw = self::upgrade_off( $raw );
 
 		$bool  = static fn( string $k ): bool => ! empty( $raw[ $k ] );
 		$break = static function ( string $k, string $fallback ) use ( $raw ): string {
@@ -260,7 +265,6 @@ final class Scroll_Settings {
 	 */
 	public static function breadcrumb_choices(): array {
 		return [
-			'none'   => __( 'None', 'sheaf' ),
 			'top'    => __( 'Top', 'sheaf' ),
 			'bottom' => __( 'Bottom', 'sheaf' ),
 			'both'   => __( 'Top and bottom', 'sheaf' ),
@@ -276,7 +280,7 @@ final class Scroll_Settings {
 	 */
 	public static function breadcrumb_style_choices(): array {
 		return [
-			'back_to_book' => __( 'A link back to the book', 'sheaf' ),
+			'none'         => __( 'None', 'sheaf' ),
 			'book_chapter' => __( 'Book and chapter', 'sheaf' ),
 			'full'         => __( 'The full trail', 'sheaf' ),
 			'full_select'  => __( 'The full trail, ending in a chapter drop-down', 'sheaf' ),
@@ -290,7 +294,6 @@ final class Scroll_Settings {
 	 */
 	public static function nav_pos_choices(): array {
 		return [
-			'none'   => __( 'None', 'sheaf' ),
 			'top'    => __( 'Top', 'sheaf' ),
 			'bottom' => __( 'Bottom', 'sheaf' ),
 			'both'   => __( 'Top and bottom', 'sheaf' ),
@@ -305,6 +308,7 @@ final class Scroll_Settings {
 	 */
 	public static function nav_style_choices(): array {
 		return [
+			'none'            => __( 'None', 'sheaf' ),
 			'back_to_book'    => __( 'Back to the book', 'sheaf' ),
 			'prev_next'       => __( 'Previous / next only', 'sheaf' ),
 			'title_only'      => __( 'Chapter titles only', 'sheaf' ),
@@ -422,6 +426,7 @@ final class Scroll_Settings {
 	 */
 	private static function coerce( array $s ): array {
 		$d      = self::defaults();
+		$s      = self::upgrade_off( $s );
 		$in_set = static function ( $v, array $allowed, string $fallback ): string {
 			return in_array( $v, $allowed, true ) ? (string) $v : $fallback;
 		};
@@ -443,6 +448,36 @@ final class Scroll_Settings {
 			'show_page_numbers'      => (bool) $s['show_page_numbers'],
 			'show_full_toc'          => (bool) $s['show_full_toc'],
 		];
+	}
+
+	/**
+	 * Upgrade settings saved before "off" moved from the placement to the style.
+	 *
+	 * A book saved with a placement of `none` meant "do not show this at all".
+	 * That is now the style's `none`, and `none` is no longer a valid placement —
+	 * so without this, the placement would clamp back to its default and silently
+	 * switch the chrome *on* for every book that had deliberately turned it off.
+	 *
+	 * Runs on read (coerce), so it needs no migration pass over the database: the
+	 * translated value is what every caller sees, and the next save writes it back
+	 * in the new shape.
+	 *
+	 * @param array<string,mixed> $s
+	 * @return array<string,mixed>
+	 */
+	private static function upgrade_off( array $s ): array {
+		$d = self::defaults();
+
+		if ( 'none' === ( $s['breadcrumbs'] ?? '' ) ) {
+			$s['breadcrumbs']      = $d['breadcrumbs'];
+			$s['breadcrumb_style'] = 'none';
+		}
+		if ( 'none' === ( $s['chapter_nav_at'] ?? '' ) ) {
+			$s['chapter_nav_at']    = $d['chapter_nav_at'];
+			$s['chapter_nav_style'] = 'none';
+		}
+
+		return $s;
 	}
 
 	/**

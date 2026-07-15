@@ -126,6 +126,28 @@ try {
 		$check( 'bottom' === $nav['breadcrumbs'], 'sanitize: valid breadcrumb pos kept' );
 		$check( 'book_chapter' === $nav['breadcrumb_style'], 'sanitize: valid breadcrumb style kept' );
 		$check( 'full' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumb_style' => 'nope' ] )['breadcrumb_style'], 'sanitize: unknown breadcrumb style -> default' );
+
+		// "None" is a style now, not a placement.
+		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'model: no none in breadcrumb placements' );
+		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::NAV_POS, true ), 'model: no none in nav placements' );
+		$check( in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: none is a breadcrumb style' );
+		$check( in_array( 'none', \Sheaf\Scroll_Settings::NAV_STYLE, true ), 'model: none is a nav style' );
+		$check( ! in_array( 'back_to_book', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: back_to_book is not a breadcrumb style' );
+
+		// Upgrade: a placement of "none" was how a book turned this chrome off
+		// before "off" became a style. It must stay off, not clamp to a default.
+		$old = \Sheaf\Scroll_Settings::sanitize(
+			[
+				'breadcrumbs'       => 'none',
+				'breadcrumb_style'  => 'full',
+				'chapter_nav_at'    => 'none',
+				'chapter_nav_style' => 'prev_next_title',
+			]
+		);
+		$check( 'none' === $old['breadcrumb_style'], 'upgrade: breadcrumbs at none -> style none' );
+		$check( 'top' === $old['breadcrumbs'], 'upgrade: breadcrumbs placement falls back to the default' );
+		$check( 'none' === $old['chapter_nav_style'], 'upgrade: nav at none -> style none' );
+		$check( 'bottom' === $old['chapter_nav_at'], 'upgrade: nav placement falls back to the default' );
 		$check( 'top' === $nav['chapter_nav_at'], 'sanitize: valid nav pos kept' );
 		$check( 'prev_next_title' === $nav['chapter_nav_style'], 'sanitize: unknown nav style -> default' );
 
@@ -174,6 +196,22 @@ try {
 	$check( '<hr class="c">' === $got['chapter_break_html'], 'round-trip: chapter_break_html verbatim' );
 	$check( true === $got['show_page_numbers'], 'round-trip: show_page_numbers' );
 	$check( true === \Sheaf\Scroll_Settings::enabled( $book ), 'enabled() helper true' );
+
+	// A book stored in the old shape (off = a placement of "none") reads back
+	// switched off, without any migration pass over the database.
+	$legacy = (int) wp_insert_post(
+		[ 'post_type' => 'page', 'post_title' => 'Legacy Book', 'post_status' => 'publish' ]
+	);
+	$created[] = $legacy;
+	update_post_meta(
+		$legacy,
+		\Sheaf\Scroll_Settings::META,
+		[ 'breadcrumbs' => 'none', 'chapter_nav_at' => 'none', 'chapter_nav_style' => 'prev_next_title' ]
+	);
+	$old = \Sheaf\Scroll_Settings::get( $legacy );
+	$check( 'none' === $old['breadcrumb_style'], 'upgrade on read: breadcrumbs stay off' );
+	$check( 'none' === $old['chapter_nav_style'], 'upgrade on read: chapter nav stays off' );
+	$check( in_array( $old['breadcrumbs'], \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'upgrade on read: placement is valid again' );
 
 	/* --------------------------------------------------------------- Pages -- */
 
@@ -294,10 +332,8 @@ try {
 	$check( false === strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: book_chapter drops the hierarchy above the book' );
 	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: book_chapter keeps the book' );
 
-	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'back_to_book' );
-	$check( false !== strpos( $crumbs, 'back to' ), 'crumbs: back_to_book is a back link' );
-	$check( false !== strpos( $crumbs, (string) get_permalink( $book ) ), 'crumbs: back_to_book links to the book' );
-	$check( false === strpos( $crumbs, 'breadcrumbs__sep' ), 'crumbs: back_to_book has no trail' );
+	$check( '' === \Sheaf\Renderer::breadcrumbs( $c1, 'none' ), 'crumbs: none renders nothing' );
+	$check( '' === \Sheaf\Renderer::chapter_nav( $c3, 'none' ), 'nav: none renders nothing' );
 
 	$crumbs = \Sheaf\Renderer::breadcrumbs( $c3, 'full_select' );
 	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__select' ), 'crumbs: full_select ends in a select' );

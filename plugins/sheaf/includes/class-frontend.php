@@ -446,12 +446,12 @@ final class Frontend {
 		$book_id  = Books::get_book_id( (int) get_queried_object_id() );
 		$settings = $book_id ? Scroll_Settings::get( $book_id ) : Scroll_Settings::defaults();
 
+		// Switching either off is a style, so the style alone decides: every
+		// remaining placement renders somewhere.
 		$in_nav = apply_filters( 'sheaf_auto_chapter_nav', true )
-			&& 'none' !== $settings['chapter_nav_at']
 			&& 'toc_select' === $settings['chapter_nav_style'];
 
 		$in_crumbs = apply_filters( 'sheaf_auto_breadcrumbs', true )
-			&& 'none' !== $settings['breadcrumbs']
 			&& 'full_select' === $settings['breadcrumb_style'];
 
 		if ( ! $in_nav && ! $in_crumbs ) {

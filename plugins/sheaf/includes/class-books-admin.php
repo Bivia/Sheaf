@@ -536,7 +536,9 @@ final class Books_Admin {
 			esc_html__( 'What each table-of-contents entry shows after the chapter title.', 'sheaf' )
 		);
 
-		// Breadcrumb display.
+		// Breadcrumbs: what the trail contains, then where it sits.
+		self::render_breadcrumb_style( $book_id, (string) $s['breadcrumb_style'] );
+
 		printf(
 			'<tr><th scope="row"><label for="sheaf-breadcrumbs">%1$s</label></th><td>
 				<select id="sheaf-breadcrumbs" name="sheaf_scroll[breadcrumbs]">%2$s</select>
@@ -547,11 +549,8 @@ final class Books_Admin {
 			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
 		);
 
-		self::render_breadcrumb_style( $book_id, (string) $s['breadcrumb_style'] );
-
-		// Chapter navigation style (the "back" option shows the book's title).
-		// Style comes before placement: what the navigation *is* frames where it
-		// goes, and it pairs the two placement dropdowns either side of it.
+		// Chapter navigation: what it contains, then where it sits — the same order
+		// as the breadcrumbs above. The "back" option shows the book's title.
 		$nav_styles                 = Scroll_Settings::nav_style_choices();
 		$nav_styles['back_to_book'] = sprintf(
 			/* translators: %s: book title. */

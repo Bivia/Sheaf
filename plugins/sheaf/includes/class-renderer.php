@@ -163,9 +163,10 @@ final class Renderer {
 	}
 
 	/**
-	 * Chapter navigation for a single chapter, in one of five styles (see
+	 * Chapter navigation for a single chapter, in one of six styles (see
 	 * Scroll_Settings::NAV_STYLE). An empty $style resolves the book's setting.
 	 *
+	 *  - none:            no navigation.
 	 *  - back_to_book:    one link back to the book page.
 	 *  - prev_next:       previous / next, direction words only.
 	 *  - title_only:      previous / next, chapter titles only.
@@ -191,6 +192,10 @@ final class Renderer {
 		}
 		if ( ! in_array( $style, Scroll_Settings::NAV_STYLE, true ) ) {
 			$style = 'prev_next_title';
+		}
+
+		if ( 'none' === $style ) {
+			return '';
 		}
 
 		if ( 'back_to_book' === $style ) {
@@ -345,7 +350,7 @@ final class Renderer {
 	/**
 	 * A chapter's trail, in the book's chosen style:
 	 *
-	 *  - back_to_book: one link back to the book, no trail.
+	 *  - none:         no trail.
 	 *  - book_chapter: book › chapter.
 	 *  - full:         the hierarchy above the book › book › chapter (default).
 	 *  - full_select:  as full, but the chapter is a drop-down of the book's
@@ -367,8 +372,8 @@ final class Renderer {
 			$style = 'full';
 		}
 
-		if ( 'back_to_book' === $style ) {
-			return self::crumbs_back_link( $book );
+		if ( 'none' === $style ) {
+			return '';
 		}
 
 		$parts = [];
@@ -388,19 +393,6 @@ final class Renderer {
 		$parts[] = '' !== $select ? $select : self::crumb_current( get_the_title( $post ) );
 
 		return self::breadcrumb_nav( $parts );
-	}
-
-	/**
-	 * "↖︎ back to “<book>”" — a single link, in place of a trail.
-	 */
-	private static function crumbs_back_link( \WP_Post $book ): string {
-		return sprintf(
-			'<nav class="sheaf-breadcrumbs sheaf-breadcrumbs--back" aria-label="%1$s"><a class="sheaf-breadcrumbs__back" href="%2$s"><span class="sheaf-breadcrumbs__arrow" aria-hidden="true">↖︎</span> %3$s</a></nav>',
-			esc_attr__( 'Breadcrumb', 'sheaf' ),
-			esc_url( (string) get_permalink( $book ) ),
-			/* translators: %s: book title. */
-			esc_html( sprintf( __( 'back to “%s”', 'sheaf' ), get_the_title( $book ) ) )
-		);
 	}
 
 	/**
