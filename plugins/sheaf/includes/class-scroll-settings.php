@@ -61,7 +61,7 @@ final class Scroll_Settings {
 	public const TOC_META = [ 'none', 'reading_time', 'word_count', 'page_number' ];
 
 	/** Where the chapter breadcrumb trail is inserted on a single chapter view. */
-	public const BREADCRUMB_POS = [ 'top', 'bottom', 'both', 'none' ];
+	public const BREADCRUMB_POS = [ 'none', 'top', 'bottom', 'both' ];
 
 	/** Where the chapter prev/next navigation is inserted (separate-page mode). */
 	public const NAV_POS = [ 'none', 'top', 'bottom', 'both' ];
@@ -255,10 +255,10 @@ final class Scroll_Settings {
 	 */
 	public static function breadcrumb_choices(): array {
 		return [
+			'none'   => __( 'None', 'sheaf' ),
 			'top'    => __( 'Top', 'sheaf' ),
 			'bottom' => __( 'Bottom', 'sheaf' ),
 			'both'   => __( 'Top and bottom', 'sheaf' ),
-			'none'   => __( 'None', 'sheaf' ),
 		];
 	}
 
