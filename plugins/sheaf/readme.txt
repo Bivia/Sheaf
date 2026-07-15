@@ -45,6 +45,11 @@ Display (all opt-in except the chapter breadcrumb)
   whole-book file into chapters at page breaks, section breaks, headings, a line
   of symbols (a scene-break glyph), or blank gaps. See docs/whole-book-import.md.
 
+The byline, date, and related-post lists around a chapter come from your theme,
+not from Sheaf. To drop them, give chapters their own template in the Site
+Editor — everything Sheaf adds travels with the content and keeps working. See
+docs/chapter-template.md.
+
 == Roadmap ==
 * Addressable text versions that comments can reference and link to.
 
