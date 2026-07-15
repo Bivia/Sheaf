@@ -462,7 +462,7 @@ final class Books_Admin {
 				<span class="sheaf-toc-custom"%3$s><input type="text" name="sheaf_scroll[toc_list_style_custom]" value="%4$s" class="regular-text" placeholder="%5$s"></span>
 				<p class="description">%6$s</p>
 			</td></tr>',
-			esc_html__( 'Table of contents style', 'sheaf' ),
+			esc_html__( 'Table of contents bullet style', 'sheaf' ),
 			$style_options,
 			'custom' === $s['toc_list_style'] ? '' : ' style="display:none"',
 			esc_attr( (string) $s['toc_list_style_custom'] ),
