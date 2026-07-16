@@ -131,6 +131,8 @@ try {
 		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'model: no none in breadcrumb placements' );
 		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::NAV_POS, true ), 'model: no none in nav placements' );
 		$check( in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: none is a breadcrumb style' );
+		$check( in_array( 'book_page', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: book_page is a breadcrumb style' );
+		$check( 'book_page' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumb_style' => 'book_page' ] )['breadcrumb_style'], 'sanitize: book_page style kept' );
 		$check( in_array( 'none', \Sheaf\Scroll_Settings::NAV_STYLE, true ), 'model: none is a nav style' );
 		$check( ! in_array( 'back_to_book', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: back_to_book is not a breadcrumb style' );
 
@@ -334,6 +336,14 @@ try {
 
 	$check( '' === \Sheaf\Renderer::breadcrumbs( $c1, 'none' ), 'crumbs: none renders nothing' );
 	$check( '' === \Sheaf\Renderer::chapter_nav( $c3, 'none' ), 'nav: none renders nothing' );
+
+	// book_page: the book link, then the chapter's "pg X of Y" position.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'book_page' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: book_page keeps the book' );
+	$check( false === strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: book_page drops the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__page' ), 'crumbs: book_page shows a page position' );
+	$check( false !== strpos( $crumbs, 'of ' ), 'crumbs: book_page reads "pg X of Y"' );
+	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: book_page has no chapter crumb' );
 
 	$crumbs = \Sheaf\Renderer::breadcrumbs( $c3, 'full_select' );
 	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__select' ), 'crumbs: full_select ends in a select' );
