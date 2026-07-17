@@ -344,6 +344,10 @@ try {
 	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__page' ), 'crumbs: book_page shows a page position' );
 	$check( false !== strpos( $crumbs, 'of ' ), 'crumbs: book_page reads "pg X of Y"' );
 	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: book_page has no chapter crumb' );
+	// The meta is an <em> with the "of Y" in its own <span>, and no leading comma.
+	$check( false !== strpos( $crumbs, '<em class="sheaf-breadcrumbs__page">pg ' ), 'crumbs: book_page wraps the meta in an <em>' );
+	$check( false !== strpos( $crumbs, '<span> of ' ), 'crumbs: book_page wraps "of Y" in its own span' );
+	$check( false === strpos( $crumbs, ', pg' ), 'crumbs: book_page drops the leading comma' );
 
 	// full_book: the full trail up to and including the book, and nothing after —
 	// no chapter crumb, no page position.

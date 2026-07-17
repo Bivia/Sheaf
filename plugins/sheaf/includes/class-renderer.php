@@ -467,18 +467,18 @@ final class Renderer {
 		$total = (int) $map['total_pages'];
 		$start = (int) ( $map['chapters'][ $chapter_id ]['start_page'] ?? 0 );
 
+		// The meta reads "pg X of Y" in an <em>, with the "of Y" in its own <span>,
+		// so an author can restyle or hide the total (or the whole meta) from a
+		// style set. A leading space separates it from the book link.
 		$position = ( $total > 0 && $start > 0 )
-			? sprintf(
-				'<span class="sheaf-breadcrumbs__page">%s</span>',
-				esc_html(
-					sprintf(
-						/* translators: 1: page number a chapter begins on, 2: total pages in the book. */
-						__( ', pg %1$s of %2$s', 'sheaf' ),
-						number_format_i18n( $start ),
-						number_format_i18n( $total )
-					)
-				)
-			)
+			? ' <em class="sheaf-breadcrumbs__page">' . sprintf(
+				/* translators: 1: page number a chapter begins on; 2: total pages in the book; 3: opening <span>, 4: closing </span> wrapping "of Y" so it can be styled. */
+				__( 'pg %1$s%3$s of %2$s%4$s', 'sheaf' ),
+				esc_html( number_format_i18n( $start ) ),
+				esc_html( number_format_i18n( $total ) ),
+				'<span>',
+				'</span>'
+			) . '</em>'
 			: '';
 
 		return sprintf(
