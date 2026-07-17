@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.10.0
+Stable tag: 0.11.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -66,6 +66,20 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.11.0 =
+* Two new breadcrumb styles: the book title with the chapter's "pg X of Y"
+  position, and the full trail ending at the book title (no chapter after it).
+* New "Above the title" breadcrumb placement — a small eyebrow over the chapter
+  heading (book, and the series above it, in quiet type), on block themes.
+* The full-trail option is hidden for a top-level book, where it could not be
+  told apart from "Book and chapter".
+* The breadcrumb page position is now `<em>pg X<span> of Y</span></em>`, so a
+  style set can restyle or hide the meta; its leading comma is gone.
+* Full-book scrolling now hides the breadcrumb trail as well as the chapter
+  navigation while active — the page already stands for the whole book.
+* Applied inline and block styles now out-specify a book's page-style baseline,
+  so a deliberately applied style wins without needing !important.
 
 = 0.10.0 =
 * Breadcrumbs style: each book now chooses what a chapter's breadcrumb trail
