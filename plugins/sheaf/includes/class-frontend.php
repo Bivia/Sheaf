@@ -594,7 +594,6 @@ final class Frontend {
 			'bookId'     => $book_id,
 			'bookTitle'  => get_the_title( $book_id ),
 			'bookUrl'    => get_permalink( $book_id ),
-			'bookCrumbs' => Renderer::breadcrumbs( $book_id ),
 			'currentId'  => $chapter_id,
 			'totalPages' => (int) $map['total_pages'],
 			'settings'   => [

@@ -63,7 +63,6 @@
 
 	document.body.classList.add( 'sheaf-scroll-active' );
 	retitleForBook();
-	rebreadcrumb();
 	buildSlots();
 	observeSlots();
 	if ( false !== settings.sidebar ) {
@@ -85,19 +84,6 @@
 		);
 		if ( heading ) {
 			heading.textContent = data.bookTitle;
-		}
-	}
-
-	// The server renders the entry chapter's own breadcrumb trail; in full-book
-	// view swap it for the book's trail (ending at the book). Client-side so the
-	// plain single-chapter fallback keeps the chapter trail.
-	function rebreadcrumb() {
-		if ( ! data.bookCrumbs ) {
-			return;
-		}
-		var nav = document.querySelector( '.sheaf-breadcrumbs' );
-		if ( nav ) {
-			nav.outerHTML = data.bookCrumbs;
 		}
 	}
 
