@@ -371,6 +371,35 @@ try {
 	);
 	$created[] = $orphan;
 	$check( '' === \Sheaf\Renderer::breadcrumbs( $orphan, 'full' ), 'crumbs: off-book chapter renders nothing' );
+
+	/* ---------------------------------------- Renderer::book_eyebrow ----- */
+	// The "above the title" eyebrow ends at the book — the chapter is the <h1>,
+	// so its crumb is dropped, and the trail carries the eyebrow modifier class.
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'full' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs--eyebrow' ), 'eyebrow: carries the eyebrow class' );
+	$check( false !== strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: full keeps the series line above the book' );
+	$check( false !== strpos( $eye, 'Scroll Test Book' ), 'eyebrow: full keeps the book' );
+	$check( false === strpos( $eye, 'aria-current' ), 'eyebrow: the chapter crumb is dropped' );
+
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'book_chapter' );
+	$check( false === strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: book_chapter drops the series line' );
+	$check( false !== strpos( $eye, 'Scroll Test Book' ), 'eyebrow: book_chapter keeps the book' );
+
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'book_page' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs--eyebrow' ), 'eyebrow: book_page is tagged an eyebrow' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs__page' ), 'eyebrow: book_page shows the page position' );
+
+	// A chapter drop-down would only echo the <h1>, so full_select renders as full.
+	$eye = \Sheaf\Renderer::book_eyebrow( $c3, 'full_select' );
+	$check( false === strpos( $eye, 'sheaf-breadcrumbs__select' ), 'eyebrow: full_select drops the chapter drop-down' );
+	$check( false !== strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: full_select still shows the series line' );
+
+	$check( '' === \Sheaf\Renderer::book_eyebrow( $c1, 'none' ), 'eyebrow: none renders nothing' );
+	$check( '' === \Sheaf\Renderer::book_eyebrow( $orphan, 'full' ), 'eyebrow: off-book chapter renders nothing' );
+
+	// 'above' is a real placement now, and 'none' still is not.
+	$check( in_array( 'above', \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'model: above is a breadcrumb placement' );
+	$check( 'above' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumbs' => 'above' ] )['breadcrumbs'], 'sanitize: above placement kept' );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );

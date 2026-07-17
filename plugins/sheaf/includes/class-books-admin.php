@@ -557,7 +557,7 @@ final class Books_Admin {
 			</td></tr>',
 			esc_html__( 'Display breadcrumbs at', 'sheaf' ),
 			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
-			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
+			esc_html__( 'Where the breadcrumb trail is placed on a chapter page. “Above the title” sets it as a small line over the chapter’s heading (the trail ends at the book, since the heading is the chapter) — this one needs a block theme.', 'sheaf' )
 		);
 
 		// Chapter navigation: what it contains, then where it sits — the same order

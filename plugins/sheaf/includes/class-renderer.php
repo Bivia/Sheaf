@@ -401,12 +401,63 @@ final class Renderer {
 	}
 
 	/**
+	 * The "above the title" eyebrow — the breadcrumb trail rendered to end at the
+	 * book, because the chapter is the <h1> immediately below it. So the chapter
+	 * crumb is dropped and the book is a link, not the current crumb.
+	 *
+	 * Honors the book's breadcrumb style: full / full_select give the hierarchy
+	 * above the book (a "series" line, from the book Page's parent) through the
+	 * book; book_chapter gives just the book; book_page the book with its
+	 * "pg X of Y" position; none nothing. A chapter drop-down would only echo the
+	 * <h1>, so full_select renders the same trail as full here.
+	 *
+	 * Placed before the title by Frontend::prepend_title_eyebrow.
+	 */
+	public static function book_eyebrow( int $chapter_id, string $style = '' ): string {
+		$book = Books::get_book( $chapter_id );
+		if ( ! $book ) {
+			return '';
+		}
+		$book_id = (int) $book->ID;
+
+		if ( '' === $style ) {
+			$style = (string) Scroll_Settings::get( $book_id )['breadcrumb_style'];
+		}
+		if ( ! in_array( $style, Scroll_Settings::BREADCRUMB_STYLE, true ) ) {
+			$style = 'full';
+		}
+
+		if ( 'none' === $style ) {
+			return '';
+		}
+
+		// book_page already ends at the book — reuse it, tagged as an eyebrow.
+		if ( 'book_page' === $style ) {
+			return self::crumb_book_page( $book, $book_id, $chapter_id, 'sheaf-breadcrumbs--eyebrow' );
+		}
+
+		$parts = [];
+
+		// The hierarchy above the book — the series line, from full / full_select.
+		if ( 'book_chapter' !== $style ) {
+			foreach ( Books::ancestors( $book_id ) as $ancestor ) {
+				$parts[] = self::crumb_link( (string) get_permalink( $ancestor ), get_the_title( $ancestor ) );
+			}
+		}
+
+		// The book is the last crumb, and a link — the chapter is the <h1> below.
+		$parts[] = self::crumb_link( (string) get_permalink( $book ), get_the_title( $book ) );
+
+		return self::breadcrumb_nav( $parts, 'sheaf-breadcrumbs--eyebrow' );
+	}
+
+	/**
 	 * The "book_page" trail: a link to the book, followed by the chapter's
 	 * estimated position in it — "pg X of Y" — using the same pseudo-page map as
 	 * the full-book reader. A book with no counted words (no page estimate) shows
 	 * just the book link.
 	 */
-	private static function crumb_book_page( \WP_Post $book, int $book_id, int $chapter_id ): string {
+	private static function crumb_book_page( \WP_Post $book, int $book_id, int $chapter_id, string $extra = '' ): string {
 		$map   = Pages::book_map( $book_id );
 		$total = (int) $map['total_pages'];
 		$start = (int) ( $map['chapters'][ $chapter_id ]['start_page'] ?? 0 );
@@ -426,7 +477,8 @@ final class Renderer {
 			: '';
 
 		return sprintf(
-			'<nav class="sheaf-breadcrumbs sheaf-breadcrumbs--page" aria-label="%1$s">%2$s%3$s</nav>',
+			'<nav class="sheaf-breadcrumbs sheaf-breadcrumbs--page%1$s" aria-label="%2$s">%3$s%4$s</nav>',
+			'' !== $extra ? ' ' . $extra : '',
 			esc_attr__( 'Breadcrumb', 'sheaf' ),
 			self::crumb_link( (string) get_permalink( $book ), get_the_title( $book ) ),
 			$position
@@ -478,9 +530,10 @@ final class Renderer {
 	 *
 	 * @param string[] $parts Escaped HTML.
 	 */
-	private static function breadcrumb_nav( array $parts ): string {
+	private static function breadcrumb_nav( array $parts, string $extra = '' ): string {
 		return sprintf(
-			'<nav class="sheaf-breadcrumbs" aria-label="%1$s">%2$s</nav>',
+			'<nav class="sheaf-breadcrumbs%1$s" aria-label="%2$s">%3$s</nav>',
+			'' !== $extra ? ' ' . $extra : '',
 			esc_attr__( 'Breadcrumb', 'sheaf' ),
 			implode( ' <span class="sheaf-breadcrumbs__sep" aria-hidden="true">&rsaquo;</span> ', $parts )
 		);

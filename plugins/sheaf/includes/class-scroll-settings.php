@@ -62,10 +62,12 @@ final class Scroll_Settings {
 
 	/**
 	 * Where the chapter breadcrumb trail is inserted on a single chapter view.
+	 * `above` sits it before the chapter's <h1> title (a block-theme eyebrow —
+	 * see Frontend::prepend_title_eyebrow); the rest sit inside the content.
 	 * Switching the trail off is a style (`none`), not a placement — see
 	 * BREADCRUMB_STYLE and upgrade_off().
 	 */
-	public const BREADCRUMB_POS = [ 'top', 'bottom', 'both' ];
+	public const BREADCRUMB_POS = [ 'above', 'top', 'bottom', 'both' ];
 
 	/** What a chapter's breadcrumb trail contains, or `none` for no trail. */
 	public const BREADCRUMB_STYLE = [ 'none', 'book_page', 'book_chapter', 'full', 'full_select' ];
@@ -265,6 +267,7 @@ final class Scroll_Settings {
 	 */
 	public static function breadcrumb_choices(): array {
 		return [
+			'above'  => __( 'Above the title', 'sheaf' ),
 			'top'    => __( 'Top', 'sheaf' ),
 			'bottom' => __( 'Bottom', 'sheaf' ),
 			'both'   => __( 'Top and bottom', 'sheaf' ),

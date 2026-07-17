@@ -26,6 +26,7 @@ the template:
 | Comes from | What |
 | --- | --- |
 | Sheaf, via the content | breadcrumbs, chapter navigation, the full-book scrolling region |
+| Sheaf, via the Post Title block | the breadcrumb eyebrow, when a book places breadcrumbs *above the title* |
 | Sheaf, via the `<body>` class | page styles (a book's active style sets) |
 | Your theme's template | title, byline, date, categories, comments, related posts, header and footer |
 
@@ -57,7 +58,10 @@ appear wherever that block is — and they disappear entirely if you remove it.
 
 Everything else is yours to arrange. Note that the chapter **title** comes from
 the theme's Post Title block: drop it and chapters render untitled. (Full-book
-scrolling has its own chapter-title setting, which is separate from this.)
+scrolling has its own chapter-title setting, which is separate from this.) A book
+whose breadcrumbs are placed **above the title** hangs its eyebrow on that same
+Post Title block, so removing the block drops that breadcrumb too — the other
+placements ride the content and are unaffected.
 
 If you want readers to comment on chapters, keep the theme's **Comments** block
 too.
