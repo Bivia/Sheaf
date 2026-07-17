@@ -193,6 +193,27 @@ final class Style_Sets {
 	}
 
 	/**
+	 * The front-end selector for an applied inline/block style: its class,
+	 * repeated so the rule carries three classes' worth of specificity — (0,3,0).
+	 *
+	 * An applied style is placed deliberately on a run of text and must win over
+	 * the book's page-style baseline, whose scoped rules reach (0,2,2) for a
+	 * pattern as ordinary as `body.sheaf-styleset-x .entry-content p` and would
+	 * otherwise out-specify a single-class applied rule. Repeating the same class
+	 * raises the weight without narrowing what it matches, so the style keeps
+	 * applying wherever the class appears — an excerpt, a widget — which a
+	 * location scope like `.single-sheaf_chapter .entry-content` would prevent.
+	 *
+	 * Three is the minimum that clears the baseline: doubling only ties the class
+	 * column and loses on the trailing element. An author who wants a page style
+	 * to win the other way takes their own selector past three classes.
+	 */
+	public static function applied_selector( string $set, string $style, string $kind ): string {
+		$class = '.' . self::css_class( $set, $style, $kind );
+		return $class . $class . $class;
+	}
+
+	/**
 	 * The CSS declaration body for a style (no selector, no braces): the
 	 * whitelisted props followed by the raw-CSS escape hatch.
 	 */

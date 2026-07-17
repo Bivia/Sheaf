@@ -183,9 +183,11 @@ final class Frontend {
 		}
 		// @font-face for referenced web fonts, the named-style rules, then the
 		// per-set page styles (scoped to each set's body class, so they only
-		// apply on the chapters of books that activate the set). Page styles come
-		// last so they win the cascade against inline/block styles of equal
-		// specificity when an author deliberately overrides one.
+		// apply on the chapters of books that activate the set). Applied styles
+		// now carry three classes' worth of specificity (Style_Sets::applied_-
+		// selector), so they win over an ordinary page-style baseline on their
+		// own; page styles still come last so an author who deliberately matches
+		// that specificity wins the resulting tie.
 		$css = Fonts::font_face_css() . self::style_css() . Style_Sets::page_css();
 		if ( '' === $css ) {
 			return;
@@ -201,6 +203,10 @@ final class Frontend {
 	/**
 	 * Build the style-set CSS: one rule per style across the whole library,
 	 * skipping styles whose definition is empty.
+	 *
+	 * Each rule's selector is the style's class repeated (Style_Sets::applied_-
+	 * selector), so a deliberately applied style out-specifies a book's page-style
+	 * baseline while still matching wherever the class appears.
 	 */
 	public static function style_css(): string {
 		$rules = '';
@@ -211,7 +217,7 @@ final class Frontend {
 					continue;
 				}
 				$kind   = in_array( $def['kind'] ?? 'inline', Style_Sets::KINDS, true ) ? (string) $def['kind'] : 'inline';
-				$rules .= '.' . Style_Sets::css_class( (string) $set, (string) $style, $kind ) . ' { ' . $decls . " }\n";
+				$rules .= Style_Sets::applied_selector( (string) $set, (string) $style, $kind ) . ' { ' . $decls . " }\n";
 			}
 		}
 		return $rules;
