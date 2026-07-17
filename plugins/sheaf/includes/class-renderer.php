@@ -351,6 +351,8 @@ final class Renderer {
 	 * A chapter's trail, in the book's chosen style:
 	 *
 	 *  - none:         no trail.
+	 *  - full_book:    the hierarchy above the book › book — the full trail with
+	 *                  no chapter and no page position after it.
 	 *  - book_page:    book, then the chapter's estimated "pg X of Y" position.
 	 *  - book_chapter: book › chapter.
 	 *  - full:         the hierarchy above the book › book › chapter (default).
@@ -392,10 +394,13 @@ final class Renderer {
 		$parts[] = self::crumb_link( (string) get_permalink( $book ), get_the_title( $book ) );
 
 		// The chapter itself — a drop-down of the book's chapters, or its title.
-		$select  = ( 'full_select' === $style )
-			? self::crumb_chapter_select( Books::get_chapters( $book_id ), (int) $post->ID )
-			: '';
-		$parts[] = '' !== $select ? $select : self::crumb_current( get_the_title( $post ) );
+		// full_book ends at the book, so it appends nothing here.
+		if ( 'full_book' !== $style ) {
+			$select  = ( 'full_select' === $style )
+				? self::crumb_chapter_select( Books::get_chapters( $book_id ), (int) $post->ID )
+				: '';
+			$parts[] = '' !== $select ? $select : self::crumb_current( get_the_title( $post ) );
+		}
 
 		return self::breadcrumb_nav( $parts );
 	}
@@ -405,11 +410,11 @@ final class Renderer {
 	 * book, because the chapter is the <h1> immediately below it. So the chapter
 	 * crumb is dropped and the book is a link, not the current crumb.
 	 *
-	 * Honors the book's breadcrumb style: full / full_select give the hierarchy
-	 * above the book (a "series" line, from the book Page's parent) through the
-	 * book; book_chapter gives just the book; book_page the book with its
-	 * "pg X of Y" position; none nothing. A chapter drop-down would only echo the
-	 * <h1>, so full_select renders the same trail as full here.
+	 * Honors the book's breadcrumb style: full / full_select / full_book give the
+	 * hierarchy above the book (a "series" line, from the book Page's parent)
+	 * through the book; book_chapter gives just the book; book_page the book with
+	 * its "pg X of Y" position; none nothing. Above the title the chapter is always
+	 * dropped, so full, full_select, and full_book all render the same trail here.
 	 *
 	 * Placed before the title by Frontend::prepend_title_eyebrow.
 	 */

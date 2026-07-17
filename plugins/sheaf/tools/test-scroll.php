@@ -345,6 +345,14 @@ try {
 	$check( false !== strpos( $crumbs, 'of ' ), 'crumbs: book_page reads "pg X of Y"' );
 	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: book_page has no chapter crumb' );
 
+	// full_book: the full trail up to and including the book, and nothing after —
+	// no chapter crumb, no page position.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'full_book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: full_book keeps the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: full_book keeps the book' );
+	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: full_book has no chapter crumb' );
+	$check( false === strpos( $crumbs, 'sheaf-breadcrumbs__page' ), 'crumbs: full_book has no page position' );
+
 	$crumbs = \Sheaf\Renderer::breadcrumbs( $c3, 'full_select' );
 	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__select' ), 'crumbs: full_select ends in a select' );
 	$check( false !== strpos( $crumbs, 'selected' ), 'crumbs: full_select marks the current chapter' );
