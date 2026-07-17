@@ -31,6 +31,9 @@ final class Frontend {
 		// splices and re-fetches.
 		add_filter( 'the_content', [ self::class, 'wrap_chapter_content' ], 8 );
 		add_filter( 'the_content', [ self::class, 'auto_chapter_chrome' ], 9 );
+		// The "above the title" breadcrumb placement can't ride in the_content (it
+		// sits below the theme's title); it prepends to the core/post-title block.
+		add_filter( 'render_block', [ self::class, 'prepend_title_eyebrow' ], 10, 2 );
 		add_filter( 'body_class', [ self::class, 'body_class' ] );
 		add_action( 'wp_head', [ self::class, 'print_style_css' ], 20 );
 
@@ -40,6 +43,7 @@ final class Frontend {
 		add_action( 'template_redirect', [ self::class, 'maybe_serve_fragment' ] );
 		add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_reader' ] );
 		add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_chapter_nav_select' ] );
+		add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_breadcrumb_eyebrow' ] );
 		add_action( 'send_headers', [ self::class, 'vary_on_fragment' ] );
 
 		// Themes navigate chapters by post date (a "previous"/"next" chapter from
@@ -183,9 +187,11 @@ final class Frontend {
 		}
 		// @font-face for referenced web fonts, the named-style rules, then the
 		// per-set page styles (scoped to each set's body class, so they only
-		// apply on the chapters of books that activate the set). Page styles come
-		// last so they win the cascade against inline/block styles of equal
-		// specificity when an author deliberately overrides one.
+		// apply on the chapters of books that activate the set). Applied styles
+		// now carry three classes' worth of specificity (Style_Sets::applied_-
+		// selector), so they win over an ordinary page-style baseline on their
+		// own; page styles still come last so an author who deliberately matches
+		// that specificity wins the resulting tie.
 		$css = Fonts::font_face_css() . self::style_css() . Style_Sets::page_css();
 		if ( '' === $css ) {
 			return;
@@ -201,6 +207,10 @@ final class Frontend {
 	/**
 	 * Build the style-set CSS: one rule per style across the whole library,
 	 * skipping styles whose definition is empty.
+	 *
+	 * Each rule's selector is the style's class repeated (Style_Sets::applied_-
+	 * selector), so a deliberately applied style out-specifies a book's page-style
+	 * baseline while still matching wherever the class appears.
 	 */
 	public static function style_css(): string {
 		$rules = '';
@@ -211,7 +221,7 @@ final class Frontend {
 					continue;
 				}
 				$kind   = in_array( $def['kind'] ?? 'inline', Style_Sets::KINDS, true ) ? (string) $def['kind'] : 'inline';
-				$rules .= '.' . Style_Sets::css_class( (string) $set, (string) $style, $kind ) . ' { ' . $decls . " }\n";
+				$rules .= Style_Sets::applied_selector( (string) $set, (string) $style, $kind ) . ' { ' . $decls . " }\n";
 			}
 		}
 		return $rules;
@@ -286,6 +296,53 @@ final class Frontend {
 		$bottom = ( $shows( $crumbs_at, 'bottom' ) ? $crumbs : '' ) . ( $shows( $nav_at, 'bottom' ) ? $nav : '' );
 
 		return $top . $content . $bottom;
+	}
+
+	/**
+	 * Prepend the breadcrumb eyebrow to a chapter's core/post-title block when its
+	 * book places breadcrumbs "above the title" — the one placement the_content
+	 * cannot do, since the title renders before the content. So the crumb hooks
+	 * the title block instead, landing just above the <h1>.
+	 *
+	 * Block themes only: a classic theme's the_title() emits no block to catch, so
+	 * such a book simply shows no eyebrow (documented). Every other placement
+	 * leaves this a no-op — auto_chapter_chrome handles top/bottom/both, and its
+	 * $shows() never matches 'above', so the trail is never doubled.
+	 *
+	 * @param string              $block_content Rendered block HTML.
+	 * @param array<string,mixed> $block         Parsed block.
+	 */
+	public static function prepend_title_eyebrow( string $block_content, array $block ): string {
+		if ( 'core/post-title' !== ( $block['blockName'] ?? '' ) ) {
+			return $block_content;
+		}
+		// The main chapter's own title only — not a post-title block in some
+		// secondary query loop (related posts, a widget) on the same page.
+		if ( ! is_singular( Chapters::POST_TYPE ) ) {
+			return $block_content;
+		}
+		$id = (int) get_the_ID();
+		if ( $id !== (int) get_queried_object_id() ) {
+			return $block_content;
+		}
+
+		$book_id = Books::get_book_id( $id );
+		if ( ! $book_id ) {
+			return $block_content;
+		}
+		$settings = Scroll_Settings::get( $book_id );
+		if ( 'above' !== $settings['breadcrumbs'] ) {
+			return $block_content;
+		}
+
+		/** Filter: return false to disable automatic chapter breadcrumbs. */
+		if ( ! apply_filters( 'sheaf_auto_breadcrumbs', true ) ) {
+			return $block_content;
+		}
+
+		$eyebrow = Renderer::book_eyebrow( $id, (string) $settings['breadcrumb_style'] );
+
+		return '' !== $eyebrow ? $eyebrow . $block_content : $block_content;
 	}
 
 	/**
@@ -464,6 +521,26 @@ final class Frontend {
 	}
 
 	/**
+	 * Enqueue the small eyebrow stylesheet on a chapter whose book places its
+	 * breadcrumbs above the title. It is the only placement that needs baseline
+	 * CSS — the crumb has to read as small type over the <h1> — so every other
+	 * placement inherits the theme and loads nothing extra.
+	 */
+	public static function enqueue_breadcrumb_eyebrow(): void {
+		if ( ! is_singular( Chapters::POST_TYPE ) ) {
+			return;
+		}
+		$book_id = Books::get_book_id( (int) get_queried_object_id() );
+		if ( ! $book_id || 'above' !== Scroll_Settings::get( $book_id )['breadcrumbs'] ) {
+			return;
+		}
+
+		$css = SHEAF_DIR . 'assets/breadcrumbs.css';
+		$ver = file_exists( $css ) ? (string) filemtime( $css ) : SHEAF_VERSION;
+		wp_enqueue_style( 'sheaf-breadcrumbs', SHEAF_URL . 'assets/breadcrumbs.css', [], $ver );
+	}
+
+	/**
 	 * Public accessor for the full-book "spine" — the same data payload the
 	 * reader receives in window.SheafScroll. Template authors building their own
 	 * reader can call this (via sheaf_scroll_spine()) to bootstrap it. With no
@@ -517,7 +594,6 @@ final class Frontend {
 			'bookId'     => $book_id,
 			'bookTitle'  => get_the_title( $book_id ),
 			'bookUrl'    => get_permalink( $book_id ),
-			'bookCrumbs' => Renderer::breadcrumbs( $book_id ),
 			'currentId'  => $chapter_id,
 			'totalPages' => (int) $map['total_pages'],
 			'settings'   => [

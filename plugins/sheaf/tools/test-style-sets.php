@@ -68,6 +68,17 @@ try {
 	$check( 'sheaf-style-talking-monsters-computer-voice' === \Sheaf\Style_Sets::css_class( $set, $style, 'inline' ), 'css_class inline -> span class' );
 	$check( 'is-style-sheaf-talking-monsters-computer-voice' === \Sheaf\Style_Sets::css_class( $set, $style, 'block' ), 'css_class block -> is-style class' );
 	$check( 'sheaf-talking-monsters-computer-voice' === \Sheaf\Style_Sets::block_style_name( $set, $style ), 'block_style_name' );
+
+	// The front-end selector repeats the class so an applied style out-specifies a
+	// page-style baseline (see Style_Sets::applied_selector). Three copies = (0,3,0).
+	$applied = \Sheaf\Style_Sets::applied_selector( $set, $style, 'block' );
+	$class   = '.is-style-sheaf-talking-monsters-computer-voice';
+	$check( $class . $class . $class === $applied, 'applied_selector repeats the class three times' );
+	$check( 3 === substr_count( $applied, $class ), 'applied_selector carries three classes of specificity' );
+	// style_css emits this style with its stored kind (inline -> .sheaf-style-…).
+	$inline = '.sheaf-style-talking-monsters-computer-voice';
+	$check( false !== strpos( \Sheaf\Frontend::style_css(), $inline . $inline . $inline ), 'style_css emits the repeated selector' );
+
 	$decl = \Sheaf\Style_Sets::declarations( $s );
 	$check( false !== strpos( $decl, 'font-family:' ), 'declarations include a prop' );
 	$check( false === strpos( $decl, '{' ), 'declarations carry no braces' );

@@ -131,6 +131,8 @@ try {
 		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'model: no none in breadcrumb placements' );
 		$check( ! in_array( 'none', \Sheaf\Scroll_Settings::NAV_POS, true ), 'model: no none in nav placements' );
 		$check( in_array( 'none', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: none is a breadcrumb style' );
+		$check( in_array( 'book_page', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: book_page is a breadcrumb style' );
+		$check( 'book_page' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumb_style' => 'book_page' ] )['breadcrumb_style'], 'sanitize: book_page style kept' );
 		$check( in_array( 'none', \Sheaf\Scroll_Settings::NAV_STYLE, true ), 'model: none is a nav style' );
 		$check( ! in_array( 'back_to_book', \Sheaf\Scroll_Settings::BREADCRUMB_STYLE, true ), 'model: back_to_book is not a breadcrumb style' );
 
@@ -335,6 +337,26 @@ try {
 	$check( '' === \Sheaf\Renderer::breadcrumbs( $c1, 'none' ), 'crumbs: none renders nothing' );
 	$check( '' === \Sheaf\Renderer::chapter_nav( $c3, 'none' ), 'nav: none renders nothing' );
 
+	// book_page: the book link, then the chapter's "pg X of Y" position.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'book_page' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: book_page keeps the book' );
+	$check( false === strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: book_page drops the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__page' ), 'crumbs: book_page shows a page position' );
+	$check( false !== strpos( $crumbs, 'of ' ), 'crumbs: book_page reads "pg X of Y"' );
+	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: book_page has no chapter crumb' );
+	// The meta is an <em> with the "of Y" in its own <span>, and no leading comma.
+	$check( false !== strpos( $crumbs, '<em class="sheaf-breadcrumbs__page">pg ' ), 'crumbs: book_page wraps the meta in an <em>' );
+	$check( false !== strpos( $crumbs, '<span> of ' ), 'crumbs: book_page wraps "of Y" in its own span' );
+	$check( false === strpos( $crumbs, ', pg' ), 'crumbs: book_page drops the leading comma' );
+
+	// full_book: the full trail up to and including the book, and nothing after —
+	// no chapter crumb, no page position.
+	$crumbs = \Sheaf\Renderer::breadcrumbs( $c1, 'full_book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Shelf' ), 'crumbs: full_book keeps the hierarchy above the book' );
+	$check( false !== strpos( $crumbs, 'Scroll Test Book' ), 'crumbs: full_book keeps the book' );
+	$check( false === strpos( $crumbs, 'aria-current="page"' ), 'crumbs: full_book has no chapter crumb' );
+	$check( false === strpos( $crumbs, 'sheaf-breadcrumbs__page' ), 'crumbs: full_book has no page position' );
+
 	$crumbs = \Sheaf\Renderer::breadcrumbs( $c3, 'full_select' );
 	$check( false !== strpos( $crumbs, 'sheaf-breadcrumbs__select' ), 'crumbs: full_select ends in a select' );
 	$check( false !== strpos( $crumbs, 'selected' ), 'crumbs: full_select marks the current chapter' );
@@ -361,6 +383,35 @@ try {
 	);
 	$created[] = $orphan;
 	$check( '' === \Sheaf\Renderer::breadcrumbs( $orphan, 'full' ), 'crumbs: off-book chapter renders nothing' );
+
+	/* ---------------------------------------- Renderer::book_eyebrow ----- */
+	// The "above the title" eyebrow ends at the book — the chapter is the <h1>,
+	// so its crumb is dropped, and the trail carries the eyebrow modifier class.
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'full' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs--eyebrow' ), 'eyebrow: carries the eyebrow class' );
+	$check( false !== strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: full keeps the series line above the book' );
+	$check( false !== strpos( $eye, 'Scroll Test Book' ), 'eyebrow: full keeps the book' );
+	$check( false === strpos( $eye, 'aria-current' ), 'eyebrow: the chapter crumb is dropped' );
+
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'book_chapter' );
+	$check( false === strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: book_chapter drops the series line' );
+	$check( false !== strpos( $eye, 'Scroll Test Book' ), 'eyebrow: book_chapter keeps the book' );
+
+	$eye = \Sheaf\Renderer::book_eyebrow( $c1, 'book_page' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs--eyebrow' ), 'eyebrow: book_page is tagged an eyebrow' );
+	$check( false !== strpos( $eye, 'sheaf-breadcrumbs__page' ), 'eyebrow: book_page shows the page position' );
+
+	// A chapter drop-down would only echo the <h1>, so full_select renders as full.
+	$eye = \Sheaf\Renderer::book_eyebrow( $c3, 'full_select' );
+	$check( false === strpos( $eye, 'sheaf-breadcrumbs__select' ), 'eyebrow: full_select drops the chapter drop-down' );
+	$check( false !== strpos( $eye, 'Scroll Test Shelf' ), 'eyebrow: full_select still shows the series line' );
+
+	$check( '' === \Sheaf\Renderer::book_eyebrow( $c1, 'none' ), 'eyebrow: none renders nothing' );
+	$check( '' === \Sheaf\Renderer::book_eyebrow( $orphan, 'full' ), 'eyebrow: off-book chapter renders nothing' );
+
+	// 'above' is a real placement now, and 'none' still is not.
+	$check( in_array( 'above', \Sheaf\Scroll_Settings::BREADCRUMB_POS, true ), 'model: above is a breadcrumb placement' );
+	$check( 'above' === \Sheaf\Scroll_Settings::sanitize( [ 'breadcrumbs' => 'above' ] )['breadcrumbs'], 'sanitize: above placement kept' );
 } finally {
 	foreach ( $created as $id ) {
 		wp_delete_post( $id, true );

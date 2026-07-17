@@ -62,13 +62,15 @@ final class Scroll_Settings {
 
 	/**
 	 * Where the chapter breadcrumb trail is inserted on a single chapter view.
+	 * `above` sits it before the chapter's <h1> title (a block-theme eyebrow —
+	 * see Frontend::prepend_title_eyebrow); the rest sit inside the content.
 	 * Switching the trail off is a style (`none`), not a placement — see
 	 * BREADCRUMB_STYLE and upgrade_off().
 	 */
-	public const BREADCRUMB_POS = [ 'top', 'bottom', 'both' ];
+	public const BREADCRUMB_POS = [ 'above', 'top', 'bottom', 'both' ];
 
 	/** What a chapter's breadcrumb trail contains, or `none` for no trail. */
-	public const BREADCRUMB_STYLE = [ 'none', 'book_chapter', 'full', 'full_select' ];
+	public const BREADCRUMB_STYLE = [ 'none', 'full_book', 'book_page', 'book_chapter', 'full', 'full_select' ];
 
 	/** Where the chapter prev/next navigation is inserted (separate-page mode). */
 	public const NAV_POS = [ 'top', 'bottom', 'both' ];
@@ -265,6 +267,7 @@ final class Scroll_Settings {
 	 */
 	public static function breadcrumb_choices(): array {
 		return [
+			'above'  => __( 'Above the title', 'sheaf' ),
 			'top'    => __( 'Top', 'sheaf' ),
 			'bottom' => __( 'Bottom', 'sheaf' ),
 			'both'   => __( 'Top and bottom', 'sheaf' ),
@@ -281,6 +284,8 @@ final class Scroll_Settings {
 	public static function breadcrumb_style_choices(): array {
 		return [
 			'none'         => __( 'None', 'sheaf' ),
+			'full_book'    => __( 'The full trail, ending at the book title', 'sheaf' ),
+			'book_page'    => __( 'Book title with page position', 'sheaf' ),
 			'book_chapter' => __( 'Book and chapter', 'sheaf' ),
 			'full'         => __( 'The full trail', 'sheaf' ),
 			'full_select'  => __( 'The full trail, ending in a chapter drop-down', 'sheaf' ),

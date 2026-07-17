@@ -7,8 +7,12 @@
  * position sidebar / TOC skin is layered on in a later phase.
  */
 
-/* While the reader is active, our own single-chapter prev/next is redundant. */
-.sheaf-scroll-active .sheaf-chapter-nav {
+/* While the reader is active the page represents the whole book, so its
+ * single-chapter chrome is redundant: hide our prev/next and the breadcrumb
+ * trail (the heading is retitled to the book). Both still show in the
+ * single-chapter view and without JS. */
+.sheaf-scroll-active .sheaf-chapter-nav,
+.sheaf-scroll-active .sheaf-breadcrumbs {
 	display: none;
 }
 

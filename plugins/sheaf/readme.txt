@@ -32,8 +32,11 @@ Display (all opt-in except the chapter breadcrumb)
 * `[sheaf_breadcrumbs]` / "Sheaf: Breadcrumbs" block — the hierarchy trail.
 * Single chapter views show breadcrumbs and chapter navigation automatically.
   Under the book's Display settings, each book chooses what its breadcrumbs
-  contain (none, book and chapter, the full trail, or the full trail ending in a
-  chapter drop-down) and where they sit (top / bottom / both), and likewise what
+  contain (none; the full trail ending at the book title; the book with a
+  "pg X of Y" position; book and chapter; the full trail — offered only when the
+  book sits under a parent; or the full trail ending in a chapter drop-down) and
+  where they sit (above the chapter title as a
+  small eyebrow, or top / bottom / both of the content), and likewise what
   its chapter navigation contains (none, back-to-book, previous/next, chapter
   titles, or a full-contents drop-down) and where it sits. Either is switched off
   by choosing a style of "None". The breadcrumb styles are previewed with the

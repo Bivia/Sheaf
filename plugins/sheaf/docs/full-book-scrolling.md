@@ -64,7 +64,6 @@ reader it's the global `window.SheafScroll`; from PHP it's
   "bookId":     114,
   "bookTitle":  "Ashfall",
   "bookUrl":    "https://example.com/novels/long-war/ashfall/",
-  "bookCrumbs": "<nav class=\"sheaf-breadcrumbs\">…</nav>", // book-level trail
   "currentId":  132,          // the entry chapter this page loaded as
   "totalPages": 21,           // estimated pseudo-pages for the whole book
   "settings": {
@@ -162,9 +161,11 @@ markup is stable API; the rest is what the bundled `reader.js` produces.
 | `.sheaf-rail__toggle` | "Read one chapter at a time" control. |
 | `.sheaf-view-toggle` / `__btn` | "Read the whole book" control on an opted-out plain chapter. |
 
-The reader hides `.sheaf-chapter-nav` (Sheaf's single-chapter navigation) while
-active, since the scroll makes it redundant. It is still rendered server-side —
-so it shows for a reader viewing one chapter at a time, or without JS.
+The reader hides `.sheaf-chapter-nav` (Sheaf's single-chapter navigation) and
+`.sheaf-breadcrumbs` (the trail, in any placement) while active, since the page
+now represents the whole book — the heading is retitled to the book, so the
+per-chapter chrome is redundant. Both are still rendered server-side, so they
+show for a reader viewing one chapter at a time, or without JS.
 
 ## Building your own reader
 

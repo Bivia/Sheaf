@@ -17,6 +17,7 @@ titles, and so on.
 - [What you can and cannot write](#what-you-can-and-cannot-write)
 - [Selectors to target](#selectors-to-target)
 - [How it is emitted](#how-it-is-emitted)
+- [Page styles vs. applied styles](#page-styles-vs-applied-styles)
 - [In the editor](#in-the-editor)
 
 ## How activation works
@@ -131,6 +132,24 @@ its `body.sheaf-styleset-<slug>[.extra…] { … }` scope. Because the CSS is ga
 by the body class, it is inert on any chapter whose book has not activated the
 set. See `Sheaf\Style_Sets::compile_page_css()` and
 `Sheaf\Frontend::print_style_css()`.
+
+## Page styles vs. applied styles
+
+Editor Styles are placed *deliberately* on a word or paragraph; Page Styles are a
+book-wide baseline. So an applied style should win when the two touch the same
+thing — a block style's `margin: 1em 0` should beat a page style's
+`.entry-content p { margin: 0 }`, even though the page rule's selector looks more
+specific.
+
+Sheaf arranges this by emitting each applied style's class **three times**
+(`.is-style-…​.is-style-…​.is-style-…`), giving it three classes' worth of
+specificity so it out-weighs an ordinary page-style rule on its own. You do not
+write this — it is automatic.
+
+If you *want* a page style to override an applied one, push its selector past
+that: take the page rule to three or more classes, e.g. name the applied class in
+it (`.entry-content p.is-style-super-liminal-aside { … }`) or chain an extra hook
+class. Prefer that to `!important`, which takes the choice away for good.
 
 ## In the editor
 

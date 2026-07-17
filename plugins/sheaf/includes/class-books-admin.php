@@ -432,6 +432,17 @@ final class Books_Admin {
 		$chapters = Books::get_chapters( $book_id );
 		$sample   = $chapters ? $chapters[ intdiv( count( $chapters ), 2 ) ] : null;
 
+		// "The full trail" only differs from "Book and chapter" when the book sits
+		// under a parent Page; for a top-level book the two are identical, an
+		// impossible-to-distinguish choice. Drop it there, and show its twin as
+		// selected for a book that had "full" saved (they render the same anyway).
+		if ( ! Books::ancestors( $book_id ) ) {
+			unset( $labels['full'] );
+			if ( 'full' === $current ) {
+				$current = 'book_chapter';
+			}
+		}
+
 		$rows = '';
 		foreach ( $labels as $value => $label ) {
 			$preview = $sample ? Renderer::breadcrumbs( (int) $sample->ID, (string) $value ) : '';
@@ -546,7 +557,7 @@ final class Books_Admin {
 			</td></tr>',
 			esc_html__( 'Display breadcrumbs at', 'sheaf' ),
 			$options( Scroll_Settings::breadcrumb_choices(), (string) $s['breadcrumbs'] ),
-			esc_html__( 'Where the breadcrumb trail is placed on a chapter page.', 'sheaf' )
+			esc_html__( 'Where the breadcrumb trail is placed on a chapter page. “Above the title” sets it as a small line over the chapter’s heading (the trail ends at the book, since the heading is the chapter) — this one needs a block theme.', 'sheaf' )
 		);
 
 		// Chapter navigation: what it contains, then where it sits — the same order
