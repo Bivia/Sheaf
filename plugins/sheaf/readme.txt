@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.11.0
+Stable tag: 0.12.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -66,6 +66,13 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.12.0 =
+* The front-end admin toolbar now carries book-aware navigation. While viewing
+  a Page or a chapter, the "+ New" menu gains a "Chapter" item that opens the
+  editor with the book already selected — the Page itself, or the chapter's
+  book. The toolbar's "Edit Page" reads "Edit Book" on a book, and an "Edit
+  Chapter" link appears while reading a chapter.
 
 = 0.11.0 =
 * Two new breadcrumb styles: the book title with the chapter's "pg X of Y"
