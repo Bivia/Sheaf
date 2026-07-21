@@ -113,6 +113,30 @@ final class Books {
 	}
 
 	/**
+	 * Whether a Page is a book — i.e. at least one live chapter is assigned to it.
+	 * Cheap existence check (LIMIT 1), for callers that only need the yes/no, such
+	 * as relabelling the toolbar's "Edit Page" to "Edit Book".
+	 */
+	public static function is_book( int $page_id ): bool {
+		if ( ! $page_id ) {
+			return false;
+		}
+		global $wpdb;
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT 1 FROM {$wpdb->postmeta} m
+				 INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id
+				 WHERE m.meta_key = %s AND m.meta_value = %d
+				 AND p.post_type = %s AND p.post_status NOT IN ( 'trash', 'auto-draft' )
+				 LIMIT 1",
+				self::BOOK_META,
+				$page_id,
+				Chapters::POST_TYPE
+			)
+		);
+	}
+
+	/**
 	 * All published chapters of a book, in reading order.
 	 *
 	 * @return \WP_Post[]
