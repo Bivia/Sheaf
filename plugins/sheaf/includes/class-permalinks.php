@@ -210,7 +210,10 @@ final class Permalinks {
 			[
 				'post_type'   => self::POST_TYPE(),
 				'name'        => $slug,
-				'post_status' => 'publish',
+				// Published, plus private for a reader allowed to see it — so an
+				// unassigned private chapter's URL resolves for them (and 404s
+				// for everyone else) rather than being unreachable.
+				'post_status' => Books::readable_statuses(),
 				'numberposts' => 1,
 			]
 		);
