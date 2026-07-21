@@ -32,6 +32,7 @@ final class Plugin {
 		Frontend::register();
 		Blocks::register();
 		Admin::register();
+		Admin_Bar::register();
 		Books_Admin::register();
 		Style_Sets_Admin::register();
 		Style_Sets_Editor::register();

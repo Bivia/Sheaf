@@ -35,6 +35,7 @@ require_once SHEAF_DIR . 'includes/class-renderer.php';
 require_once SHEAF_DIR . 'includes/class-frontend.php';
 require_once SHEAF_DIR . 'includes/class-blocks.php';
 require_once SHEAF_DIR . 'includes/class-admin.php';
+require_once SHEAF_DIR . 'includes/class-admin-bar.php';
 require_once SHEAF_DIR . 'includes/class-books-admin.php';
 require_once SHEAF_DIR . 'includes/class-style-sets-admin.php';
 require_once SHEAF_DIR . 'includes/class-style-sets-editor.php';
