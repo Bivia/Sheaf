@@ -137,7 +137,25 @@ final class Books {
 	}
 
 	/**
-	 * All published chapters of a book, in reading order.
+	 * The reader-visible statuses for a book's chapters: always the published
+	 * ones, plus private chapters when the current user may read them. This lets a
+	 * private book show its private chapters to someone allowed to see the book,
+	 * while a public book still hides private chapters from the public.
+	 *
+	 * @return string[]
+	 */
+	public static function readable_statuses(): array {
+		$statuses = [ 'publish' ];
+		$type     = get_post_type_object( Chapters::POST_TYPE );
+		if ( $type && current_user_can( $type->cap->read_private_posts ) ) {
+			$statuses[] = 'private';
+		}
+		return $statuses;
+	}
+
+	/**
+	 * A book's chapters in reading order, as a reader sees them — published, plus
+	 * private ones if the current user may read them (see readable_statuses()).
 	 *
 	 * @return \WP_Post[]
 	 */
@@ -149,7 +167,7 @@ final class Books {
 		$query = new \WP_Query(
 			[
 				'post_type'      => Chapters::POST_TYPE,
-				'post_status'    => 'publish',
+				'post_status'    => self::readable_statuses(),
 				'posts_per_page' => -1,
 				'meta_key'       => self::BOOK_META,
 				'meta_value'     => $book_id,
@@ -272,7 +290,9 @@ final class Books {
 	}
 
 	/**
-	 * The published chapter with this slug inside a given book, or null.
+	 * The reader-visible chapter with this slug inside a given book, or null —
+	 * published, or private when the current user may read it, matching the TOC
+	 * (see readable_statuses()), so a private chapter listed there also routes.
 	 *
 	 * Slugs are unique *within a book* (see resolve_book_for_slug), so this is
 	 * unambiguous — unlike a slug-only lookup, which two books could both match.
@@ -285,7 +305,7 @@ final class Books {
 			[
 				'post_type'   => Chapters::POST_TYPE,
 				'name'        => $slug,
-				'post_status' => 'publish',
+				'post_status' => self::readable_statuses(),
 				'meta_key'    => self::BOOK_META,
 				'meta_value'  => $book_id,
 				'numberposts' => 1,
