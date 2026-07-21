@@ -2,7 +2,7 @@
 Contributors: sheaf
 Requires at least: 7.0
 Requires PHP: 8.3
-Stable tag: 0.12.0
+Stable tag: 0.13.0
 License: GPLv2 or later
 
 Publish novels as one chapter per post, organised into books and series.
@@ -66,6 +66,12 @@ authors: see docs/full-book-scrolling.md for the template tags, filters, data
 model, and CSS classes.
 
 == Changelog ==
+
+= 0.13.0 =
+* Private chapters now appear in a book's table of contents (and breadcrumb
+  drop-down, page numbers, and full-book scroll) for readers allowed to see
+  them, and their URLs resolve for those readers — while a public book still
+  hides its private chapters from the public.
 
 = 0.12.0 =
 * The front-end admin toolbar now carries book-aware navigation. While viewing
